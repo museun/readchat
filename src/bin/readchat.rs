@@ -1,29 +1,7 @@
 use crossbeam_channel as channel;
 use twitchchat::{commands, Event, Message as TwitchMessage};
 
-mod queue;
-mod string;
-mod window;
-mod writer;
-
-/// Timeout between checks for window resizing
-pub const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(50);
-
-/// Size of the backlog
-pub const QUEUE_SIZE: usize = 64;
-
-/// Max name length before truncation
-pub const NICK_MAX: usize = 11;
-
-/// Separator between the left and right columns
-pub const SEPARATOR: &str = " | ";
-
-pub use {
-    queue::Queue,
-    string::{partition, truncate},
-    window::Window,
-    writer::BufferedWriter,
-};
+use readchat::*;
 
 fn main() {
     let mut args = std::env::args();
@@ -33,10 +11,25 @@ fn main() {
         std::process::exit(1);
     });
 
+    let (quit_tx, quit_rx) = channel::bounded(1);
+    ctrlc::set_handler(move || {
+        let _ = quit_tx.send(());
+    })
+    .expect("must be able to handle sigquit");
+
     let (tx, rx) = channel::unbounded();
     let handle = std::thread::spawn(move || {
-        let mut window = Window::new(QUEUE_SIZE);
-        BufferedWriter::stdout().clear_screen();
+        assert!(clicolors_control::configure_terminal());
+
+        let mut term = console::Term::stdout();
+        let size = {
+            let term = term.clone();
+            move || term.size()
+        };
+
+        Writer::new(&mut term).clear_screen();
+        let mut window = Window::new(QUEUE_SIZE, size, &mut term);
+
         loop {
             channel::select! {
                 recv(rx) -> event => {
@@ -67,14 +60,18 @@ fn main() {
             }
             Event::Error(err) => {
                 eprintln!("error from twitch: {}", err);
-                break;
+                return;
             }
             _ => {}
         }
     }
 
-    // TODO wait for ctrl-c here
+    // wait for ctrl+c
+    let _ = quit_rx.recv();
+
+    // signal everything to shut down
     drop(tx);
 
-    let _ = handle.join().unwrap();
+    // wait for everything to shut down
+    let _ = handle.join();
 }

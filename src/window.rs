@@ -5,101 +5,105 @@ use yansi::{Color, Paint};
 
 use crate::*;
 
-/// The display window
-pub struct Window {
-    term: crossterm::Terminal,
+pub struct Window<'a, W> {
     queue: Queue<commands::PrivMsg>,
     width: u16,
     height: u16,
-    left_pad: Paint<Cow<'static, str>>,
+    term: &'a mut W,
+    size: Box<Fn() -> (u16, u16)>,
 }
 
-impl Window {
-    /// Create a new window with a buffer of 'buf_max' messages
-    pub fn new(buf_max: usize) -> Self {
-        let term = crossterm::terminal();
-        let (width, height) = term.terminal_size();
-        let left_pad = Paint::new(" ".repeat(NICK_MAX).into()).fg(Color::Unset);
-
-        Self {
-            term,
+impl<'a, W: Write> Window<'a, W> {
+    pub fn new<F>(buf_max: usize, size: F, term: &'a mut W) -> Self
+    where
+        F: Fn() -> (u16, u16) + 'static,
+    {
+        let mut this = Self {
             queue: Queue::with_size(buf_max),
-            width,
-            height,
-            left_pad,
-        }
+            width: 0,
+            height: 0,
+            term,
+            size: Box::new(size),
+        };
+        this.update_size();
+        this
     }
 
-    /// Check the window size, updating if its different and forcing a full redraw
-    pub fn check_size(&mut self) {
-        let (width, height) = self.term.terminal_size();
+    fn update_size(&mut self) -> bool {
+        let (width, height) = {
+            let (rows, cols) = (self.size)();
+            (cols as _, rows as _)
+        };
         if self.width == width && self.height == height {
+            return false;
+        }
+        self.width = width;
+        self.height = height;
+        true
+    }
+
+    // TODO just redraw a delta
+    pub fn check_size(&mut self) {
+        if !self.update_size() {
             return;
         }
 
-        self.width = width;
-        self.height = height;
+        // TODO cache this
+        let left_pad = Paint::new(" ".repeat(NICK_MAX).into()).fg(Color::Unset);
 
-        let mut writer = BufferedWriter::stdout();
+        let height = self.height as usize;
+        let right = (self.width as usize) - NICK_MAX - SEPARATOR.len();
+
+        let mut region = 0;
+        let mut buf = Vec::with_capacity(height);
+        for element in &self.queue {
+            let start = buf.len();
+            buf.push((element, partition(element.message(), right)));
+            region += buf.len() - start;
+        }
+
+        let diff = height.saturating_sub(std::cmp::max(region, height));
+
+        let mut writer = Writer::new(&mut self.term);
         writer.clear_screen();
 
-        let right = (self.width as usize) - NICK_MAX - SEPARATOR.len();
-        let mut budget = self.height;
-
-        for msg in self.queue.view_last(self.height as _) {
-            let data = partition(msg.message(), right);
-            self.write_message(&mut writer, &msg, &data, &mut budget);
-            if budget == 0 {
-                break;
-            }
+        for (msg, data) in &buf[diff..] {
+            write_message(&mut writer, msg, &data, &left_pad);
         }
     }
 
-    /// Add a message into the window
     pub fn add(&mut self, msg: commands::PrivMsg) {
-        let mut writer = BufferedWriter::stdout();
+        // TODO cache this
+        let left_pad = Paint::new(" ".repeat(NICK_MAX).into()).fg(Color::Unset);
 
         let right = (self.width as usize) - NICK_MAX - SEPARATOR.len();
         let data = partition(msg.message(), right);
 
+        let mut writer = Writer::new(&mut self.term);
         writer.scroll(data.len());
-        writer.goto((self.height as usize) - (data.len() + 1), 0);
+        writer.goto((self.height as usize) - data.len(), 0);
 
-        let mut max = self.height; // just to be safe
-        self.write_message(&mut writer, &msg, &data, &mut max);
+        write_message(&mut writer, &msg, &data, &left_pad);
         self.queue.push(msg);
     }
+}
 
-    fn write_message(
-        &self,
-        writer: &mut BufferedWriter,
-        msg: &commands::PrivMsg,
-        data: &[String],
-        budget: &mut u16,
-    ) {
-        let twitchchat::RGB(r, g, b) = msg.color().unwrap_or_default().rgb;
-        let nick = Paint::new(truncate(msg.user(), NICK_MAX)).fg(Color::RGB(r, g, b));
+fn write_message<W: Write>(
+    writer: &mut Writer<W>,
+    msg: &twitchchat::commands::PrivMsg,
+    data: &[String],
+    left_pad: &Paint<Cow<'_, str>>,
+) {
+    let twitchchat::RGB(r, g, b) = msg.color().unwrap_or_default().rgb;
+    let left = Paint::new(truncate(msg.user(), NICK_MAX)).fg(Color::RGB(r, g, b));
+    let continuation = data.len() > 1;
 
-        let continuation = data.len() > 1;
-        for (i, right) in data.into_iter().enumerate() {
-            if *budget == 0 {
-                return;
-            }
-            let left = if i == 0 || !continuation {
-                &nick
-            } else {
-                &self.left_pad
-            };
-            writeln!(
-                writer,
-                "{: >max$}{}{}",
-                left,
-                SEPARATOR,
-                right,
-                max = NICK_MAX
-            )
-            .unwrap();
-            *budget -= 1;
-        }
+    for (i, right) in data.iter().enumerate() {
+        let left = if i == 0 || !continuation {
+            format!("{: >max$}", left, max = NICK_MAX)
+        } else {
+            format!("{: >max$}", left_pad, max = NICK_MAX)
+        };
+        let _ = writeln!(writer, "{}{}{}", left, SEPARATOR, right);
     }
 }
