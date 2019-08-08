@@ -10,39 +10,28 @@ pub struct Window<'a, W> {
     width: u16,
     height: u16,
     term: &'a mut W,
-    size: Box<Fn() -> (u16, u16)>,
 }
 
 impl<'a, W: Write> Window<'a, W> {
-    pub fn new<F>(buf_max: usize, size: F, term: &'a mut W) -> Self
-    where
-        F: Fn() -> (u16, u16) + 'static,
-    {
+    pub fn new(buf_max: usize, term: &'a mut W) -> Self {
         let mut this = Self {
             queue: Queue::with_size(buf_max),
             width: 0,
             height: 0,
             term,
-            size: Box::new(size),
         };
         this.update_size();
         this
     }
 
-    fn update_size(&mut self) -> bool {
-        let (width, height) = {
-            let (rows, cols) = (self.size)();
-            (cols as _, rows as _)
-        };
-        if self.width == width && self.height == height {
-            return false;
-        }
-        self.width = width;
-        self.height = height;
-        true
-    }
-
-    // TODO just redraw a delta
+    // TODO need a special marker for lines at the 'top' that are continuations
+    // but that are also single lines
+    //
+    // f | a
+    //   | b
+    //   | c
+    // --
+    // f | c <-- this should be different
     pub fn check_size(&mut self) {
         if !self.update_size() {
             return;
@@ -54,22 +43,36 @@ impl<'a, W: Write> Window<'a, W> {
         let height = self.height as usize;
         let right = (self.width as usize) - NICK_MAX - SEPARATOR.len();
 
-        let mut region = 0;
-        let mut buf = Vec::with_capacity(height);
-        for element in &self.queue {
-            let start = buf.len();
-            buf.push((element, partition(element.message(), right)));
-            region += buf.len() - start;
-        }
+        let mut buf = vec![];
+        let mut budget = height as isize;
+        for element in self.queue.iter().rev() {
+            if budget == 0 {
+                break;
+            }
 
-        let diff = height.saturating_sub(std::cmp::max(region, height));
+            let mut lines = partition(element.message(), right);
+            let len = lines.len() as isize;
+            if budget >= len {
+                budget -= len;
+                buf.push((element, lines));
+                continue;
+            }
+
+            let rem = budget - len;
+            let rem = if rem < 0 { len + rem } else { rem };
+            lines.split_off(rem as usize);
+            buf.push((element, lines));
+            break;
+        }
 
         let mut writer = Writer::new(&mut self.term);
         writer.clear_screen();
 
-        for (msg, data) in &buf[diff..] {
+        for (msg, data) in buf.iter().rev() {
             write_message(&mut writer, msg, &data, &left_pad);
         }
+
+        totally_a_viable_hide_cursor(&mut writer, self.width as _);
     }
 
     pub fn add(&mut self, msg: commands::PrivMsg) {
@@ -85,7 +88,28 @@ impl<'a, W: Write> Window<'a, W> {
 
         write_message(&mut writer, &msg, &data, &left_pad);
         self.queue.push(msg);
+
+        totally_a_viable_hide_cursor(&mut writer, self.width as _);
     }
+
+    fn update_size(&mut self) -> bool {
+        let (width, height) = {
+            let (rows, cols) = crate::get_terminal_size();
+            (cols as _, rows as _)
+        };
+        if self.width == width && self.height == height {
+            return false;
+        }
+        self.width = width;
+        self.height = height;
+        true
+    }
+}
+
+// TODO until vscode supports the DEC escape sequence for hiding the cursor
+// move it to the top right
+fn totally_a_viable_hide_cursor<W: Write>(writer: &mut Writer<W>, width: usize) {
+    writer.goto(0, width);
 }
 
 fn write_message<W: Write>(
@@ -104,6 +128,9 @@ fn write_message<W: Write>(
         } else {
             format!("{: >max$}", left_pad, max = NICK_MAX)
         };
-        let _ = writeln!(writer, "{}{}{}", left, SEPARATOR, right);
+
+        writer.clear_line();
+        let _ = write!(writer, "{}{}{}", left, SEPARATOR, right);
+        writer.carriage_return();
     }
 }

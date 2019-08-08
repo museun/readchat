@@ -1,7 +1,6 @@
 use crossbeam_channel as channel;
-use twitchchat::{commands, Event, Message as TwitchMessage};
-
 use readchat::*;
+use twitchchat::{commands, Event, Message as TwitchMessage};
 
 fn main() {
     let mut args = std::env::args();
@@ -18,60 +17,62 @@ fn main() {
     .expect("must be able to handle sigquit");
 
     let (tx, rx) = channel::unbounded();
-    let handle = std::thread::spawn(move || {
-        assert!(clicolors_control::configure_terminal());
 
-        let mut term = console::Term::stdout();
-        let size = {
-            let term = term.clone();
-            move || term.size()
-        };
+    let (writer, handle) = {
+        let tx = tx.clone();
 
-        Writer::new(&mut term).clear_screen();
-        let mut window = Window::new(QUEUE_SIZE, size, &mut term);
+        let (name, pass) = twitchchat::ANONYMOUS_LOGIN;
+        let client = twitchchat::connect_easy(name, pass).unwrap_or_else(|err| {
+            eprintln!("cannot connect: {}", err);
+            std::process::exit(1);
+        });
 
-        loop {
-            channel::select! {
-                recv(rx) -> event => {
-                    match event {
-                        Ok(event) => window.add(event),
-                        _ => return,
+        let writer = client.writer();
+        let out_writer = writer.clone();
+
+        let handle = std::thread::spawn(move || {
+            for event in client.filter::<commands::PrivMsg>() {
+                match event {
+                    Event::IrcReady(..) => writer.join(&channel).unwrap(),
+                    Event::Message(TwitchMessage::PrivMsg(msg)) => {
+                        if tx.send(msg).is_err() {
+                            break;
+                        }
                     }
-                },
-                default(TIMEOUT) => { window.check_size() },
-            }
-        }
-    });
-
-    let (name, pass) = twitchchat::ANONYMOUS_LOGIN;
-    let client = twitchchat::connect_easy(name, pass).unwrap_or_else(|err| {
-        eprintln!("cannot connect: {}", err);
-        std::process::exit(1);
-    });
-
-    let writer = client.writer();
-    for event in client.filter::<commands::PrivMsg>() {
-        match event {
-            Event::IrcReady(..) => writer.join(&channel).unwrap(),
-            Event::Message(TwitchMessage::PrivMsg(msg)) => {
-                if tx.send(msg).is_err() {
-                    break;
+                    Event::Error(err) => {
+                        eprintln!("error from twitch: {}", err);
+                        return;
+                    }
+                    _ => {}
                 }
             }
-            Event::Error(err) => {
-                eprintln!("error from twitch: {}", err);
+        });
+
+        (out_writer, handle)
+    };
+
+    enable_ansi();
+    let term = std::io::stdout();
+    let mut term = term.lock();
+
+    Writer::new(&mut term).clear_screen();
+    let mut window = Window::new(QUEUE_SIZE, &mut term);
+
+    loop {
+        channel::select! {
+            recv(rx) -> event => {
+                match event {
+                    Ok(event) => window.add(event),
+                    _ => return,
+                }
+            },
+            recv(quit_rx) -> _ => {
+                writer.shutdown_client();
+                drop(tx);
+                let _ = handle.join();
                 return;
             }
-            _ => {}
+            default(TIMEOUT) => { window.check_size() },
         }
     }
-
-    // wait for ctrl+c
-    let _ = quit_rx.recv();
-
-    // signal everything to shut down
-    drop(tx);
-
-    // wait for everything to shut down
-    let _ = handle.join();
 }

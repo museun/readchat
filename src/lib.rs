@@ -21,3 +21,23 @@ pub use {
     window::Window,
     writer::Writer,
 };
+
+pub fn get_terminal_size() -> (u16, u16) {
+    use terminal_size::{terminal_size, Height, Width};
+    terminal_size()
+        .map(|(Width(w), Height(h))| (h, w))
+        .unwrap_or_else(|| (24, 80))
+}
+
+// TODO once cell with a dtor to unset these
+#[cfg(target_os = "windows")]
+pub fn enable_ansi() {
+    let handle = winapi_util::HandleRef::stdout();
+    let original = winapi_util::console::mode(&handle).unwrap();
+    winapi_util::console::set_mode(handle, original | 0x0002 | 0x0004 | 0x0008).unwrap()
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn enable_ansi() {
+    assert!(clicolors_control::configure_terminal());
+}

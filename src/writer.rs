@@ -9,14 +9,20 @@ impl<'a, W: Write> Writer<'a, W> {
 
     /// Clear the entire screen
     pub fn clear_screen(&mut self) {
-        self.write_all(b"\x1b[3J").unwrap();
-        self.goto(0, 0);
+        // set scroll region
+        self.write_all(b"\x1b[;r").unwrap();
+        // clear the screen
+        self.write_all(b"\x1b[2J").unwrap()
     }
 
     /// Scroll up by 'n' lines
     pub fn scroll(&mut self, n: usize) {
         self.write_all(&["\x1b[", &n.to_string(), "S"].concat().as_bytes())
             .unwrap()
+    }
+
+    pub fn clear_line(&mut self) {
+        self.write_all(b"\x1b[2k").unwrap()
     }
 
     /// Goto 'row' and 'col'
@@ -28,6 +34,11 @@ impl<'a, W: Write> Writer<'a, W> {
                 .as_bytes(),
         )
         .unwrap();
+    }
+
+    /// Move the cursor to row + 1 and to col * 0
+    pub fn carriage_return(&mut self) {
+        self.write_all(b"\x1b[1E").unwrap();
     }
 }
 
