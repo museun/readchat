@@ -325,7 +325,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "readchat"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "clicolors-control 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "crossbeam-channel 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)",
