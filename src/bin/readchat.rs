@@ -5,7 +5,13 @@ use twitchchat::{commands, Event, Message as TwitchMessage};
 fn main() {
     let mut args = std::env::args();
     let program = args.next().unwrap();
+
     let channel = args.next().unwrap_or_else(|| {
+        let buf = std::path::PathBuf::from(program);
+        let program = buf
+            .file_stem()
+            .expect("a program name should exist")
+            .to_string_lossy();
         eprintln!("usage: {} <channel>", program);
         std::process::exit(1);
     });
