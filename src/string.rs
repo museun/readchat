@@ -58,7 +58,7 @@ pub fn partition(input: &str, max: usize) -> Vec<String> {
 }
 
 /// Truncate a string to a size of 'max', appending an ellipsis
-pub fn truncate<'a>(input: &'a str, max: usize) -> Cow<'a, str> {
+pub fn truncate(input: &str, max: usize) -> Cow<'_, str> {
     if input.width() > max {
         let mut input = input.graphemes(true).take(max - 1).collect::<String>();
         input.push('…');

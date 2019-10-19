@@ -28,7 +28,7 @@ impl<T> Queue<T> {
         self.len() == 0
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a T> + DoubleEndedIterator {
+    pub fn iter(&self) -> impl Iterator<Item = &T> + DoubleEndedIterator {
         self.buf.iter()
     }
 }
