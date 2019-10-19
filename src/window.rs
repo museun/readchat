@@ -32,6 +32,7 @@ impl<'a, W: Write> Window<'a, W> {
     //   | c
     // --
     // f | c <-- this should be different
+    // XXX: how should this be different?
     pub fn check_size(&mut self) {
         if !self.update_size() {
             return;
