@@ -8,18 +8,18 @@ license = "Unlicense"
 [dependencies]
 twitchchat = "0.7.2"
 crossbeam-channel = "0.3.9"
-unicode-width = "0.1.5"
+unicode-width = "0.1.6"
 unicode-segmentation = "1.3.0"
 yansi = "0.5.0"
 ctrlc = "3.1.3"
 terminal_size = "0.1.8"
 
 [target.'cfg(unix)'.dependencies]
-clicolors-control = "1.0.0"
+clicolors-control = "1.0.1"
 
 [target.'cfg(windows)'.dependencies]
 winapi-util = "0.1.2"
 
 [dev-dependencies]
-ureq = "0.11.0"
-rand = "0.7.0"
+ureq = "0.11.1"
+rand = "0.7.2"
