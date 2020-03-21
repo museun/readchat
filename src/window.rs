@@ -1,137 +1,108 @@
-use std::borrow::Cow;
+use crossterm::terminal;
 use std::io::Write;
-use twitchchat::commands;
-use yansi::{Color, Paint};
 
-use crate::*;
+use super::{queue::Queue, *};
+use twitchchat::messages::Privmsg;
 
-pub struct Window<'a, W> {
-    queue: Queue<commands::PrivMsg>,
-    width: u16,
-    height: u16,
-    term: &'a mut W,
+pub enum UpdateMode {
+    Redraw,
+    Append,
 }
 
-impl<'a, W: Write> Window<'a, W> {
-    pub fn new(buf_max: usize, term: &'a mut W) -> Self {
-        let mut this = Self {
-            queue: Queue::with_size(buf_max),
-            width: 0,
-            height: 0,
-            term,
-        };
-        this.update_size();
-        this
+pub struct Window {
+    queue: Queue<twitch::Message>,
+    left: usize,
+    pad: String,
+}
+
+impl Window {
+    pub fn new(left: usize, limit: usize) -> Self {
+        Self {
+            left,
+            pad: " ".repeat(left),
+            queue: Queue::with_size(limit),
+        }
     }
 
-    // TODO need a special marker for lines at the 'top' that are continuations
-    // but that are also single lines
-    //
-    // f | a
-    //   | b
-    //   | c
-    // --
-    // f | c <-- this should be different
-    // XXX: how should this be different?
-    pub fn check_size(&mut self) {
-        if !self.update_size() {
-            return;
-        }
+    pub fn push(&mut self, message: Privmsg<'static>) {
+        let message = twitch::Message {
+            color: util::normalize_color(message.color().unwrap_or_default().rgb, 35.0),
+            nick: message.name,
+            data: message.data,
+        };
 
-        // TODO cache this
-        let left_pad = Paint::new(" ".repeat(NICK_MAX).into()).fg(Color::Unset);
+        self.queue.push(message);
+    }
 
-        let height = self.height as usize;
-        let right = (self.width as usize) - NICK_MAX - SEPARATOR.len();
+    pub fn update(&mut self, update: UpdateMode) -> anyhow::Result<()> {
+        use crossterm::style::{style, Color, Print};
 
-        let mut buf = vec![];
-        let mut budget = height as isize;
-        for element in self.queue.iter().rev() {
-            if budget == 0 {
-                break;
+        fn print_message(
+            stdout: &mut std::io::Stdout,
+            msg: &twitch::Message,
+            left: usize,
+            w: usize,
+            pad: &str,
+        ) -> anyhow::Result<()> {
+            let twitchchat::color::RGB(r, g, b) = msg.color;
+            let style = style(util::truncate_or_pad(&msg.nick, left)).with(Color::Rgb { r, g, b });
+            crossterm::queue!(stdout, Print(style))?;
+
+            for (i, part) in util::partition(&msg.data, w - left - 1)
+                .into_iter()
+                .enumerate()
+            {
+                if i > 0 {
+                    crossterm::queue!(stdout, Print(pad))?;
+                }
+                crossterm::queue!(stdout, Print(" "))?;
+                crossterm::queue!(stdout, Print(part))?;
+                crossterm::queue!(stdout, Print("\n"))?;
             }
+            crossterm::queue!(stdout, crossterm::cursor::Hide)?;
+            Ok(())
+        }
 
-            let mut lines = partition(element.message(), right);
-            let len = lines.len() as isize;
-            if budget >= len {
-                budget -= len;
-                buf.push((element, lines));
-                continue;
+        let (w, _h) = terminal::size()?;
+        let mut stdout = std::io::stdout();
+
+        match update {
+            UpdateMode::Redraw => {
+                if self.queue.is_empty() {
+                    return Ok(());
+                }
+
+                crossterm::execute!(stdout, terminal::Clear(terminal::ClearType::All))?;
+                for msg in self.queue.iter() {
+                    print_message(&mut stdout, msg, self.left, w as _, &self.pad)?;
+                }
             }
-
-            let rem = budget - len;
-            let rem = if rem < 0 { len + rem } else { rem };
-            lines.split_off(rem as usize);
-            buf.push((element, lines));
-            break;
+            UpdateMode::Append => {
+                let msg = self.queue.iter().rev().next().unwrap();
+                print_message(&mut stdout, msg, self.left, w as _, &self.pad)?;
+            }
         }
 
-        let mut writer = Writer::new(&mut self.term);
-        writer.clear_screen();
-
-        for (msg, data) in buf.iter().rev() {
-            write_message(&mut writer, msg, &data, &left_pad);
-        }
-
-        totally_a_viable_hide_cursor(&mut writer, self.width as _);
-    }
-
-    pub fn add(&mut self, msg: commands::PrivMsg) {
-        // TODO cache this
-        let left_pad = Paint::new(" ".repeat(NICK_MAX).into()).fg(Color::Unset);
-
-        let right = (self.width as usize) - NICK_MAX - SEPARATOR.len();
-        let data = partition(msg.message(), right);
-
-        let mut writer = Writer::new(&mut self.term);
-        writer.scroll(data.len());
-        writer.goto((self.height as usize) - data.len(), 0);
-
-        write_message(&mut writer, &msg, &data, &left_pad);
-        self.queue.push(msg);
-
-        totally_a_viable_hide_cursor(&mut writer, self.width as _);
-    }
-
-    fn update_size(&mut self) -> bool {
-        let (width, height) = {
-            let (rows, cols) = crate::get_terminal_size();
-            (cols as _, rows as _)
-        };
-        if self.width == width && self.height == height {
-            return false;
-        }
-        self.width = width;
-        self.height = height;
-        true
+        stdout.flush().map_err(Into::into)
     }
 }
 
-// TODO until vscode supports the DEC escape sequence for hiding the cursor
-// move it to the top right
-fn totally_a_viable_hide_cursor<W: Write>(writer: &mut Writer<W>, width: usize) {
-    writer.goto(0, width);
+pub struct AltScreen {}
+
+impl AltScreen {
+    pub fn new() -> anyhow::Result<Self> {
+        let mut stdout = std::io::stdout();
+        crossterm::execute!(stdout, terminal::EnterAlternateScreen)?;
+        terminal::enable_raw_mode()?;
+        crossterm::execute!(stdout, terminal::Clear(terminal::ClearType::All))?;
+        crossterm::execute!(stdout, crossterm::cursor::Hide)?;
+        Ok(Self {})
+    }
 }
 
-fn write_message<W: Write>(
-    writer: &mut Writer<W>,
-    msg: &twitchchat::commands::PrivMsg,
-    data: &[String],
-    left_pad: &Paint<Cow<'_, str>>,
-) {
-    let twitchchat::RGB(r, g, b) = msg.color().unwrap_or_default().rgb;
-    let left = Paint::new(truncate(msg.user(), NICK_MAX)).fg(Color::RGB(r, g, b));
-    let continuation = data.len() > 1;
-
-    for (i, right) in data.iter().enumerate() {
-        let left = if i == 0 || !continuation {
-            format!("{: >max$}", left, max = NICK_MAX)
-        } else {
-            format!("{: >max$}", left_pad, max = NICK_MAX)
-        };
-
-        writer.clear_line();
-        let _ = write!(writer, "{}{}{}", left, SEPARATOR, right);
-        writer.carriage_return();
+impl Drop for AltScreen {
+    fn drop(&mut self) {
+        let _ = terminal::disable_raw_mode();
+        let _ = crossterm::execute!(std::io::stdout(), terminal::LeaveAlternateScreen);
     }
 }

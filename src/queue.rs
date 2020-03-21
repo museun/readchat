@@ -1,10 +1,11 @@
-use std::collections::VecDeque;
+use std::collections::{vec_deque::Iter, VecDeque};
 
 pub struct Queue<T> {
     buf: VecDeque<T>,
     size: usize,
 }
 
+#[allow(dead_code)]
 impl<T> Queue<T> {
     pub fn with_size(size: usize) -> Self {
         Self {
@@ -20,6 +21,10 @@ impl<T> Queue<T> {
         self.buf.push_back(item);
     }
 
+    pub fn clear(&mut self) {
+        self.buf.clear()
+    }
+
     pub fn len(&self) -> usize {
         self.buf.len()
     }
@@ -28,7 +33,7 @@ impl<T> Queue<T> {
         self.len() == 0
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &T> + DoubleEndedIterator {
+    pub fn iter(&self) -> Iter<T> {
         self.buf.iter()
     }
 }
