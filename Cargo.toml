@@ -9,12 +9,12 @@ build = "build.rs"
 [dependencies]
 anyhow = "1.0.27"
 crossterm = { version = "0.16.0", features = ["event-stream"] }
+futures = "0.3.4"
 pico-args = "0.3.1"
 tokio = { version = "0.2.13", features = ["macros", "rt-threaded", "sync"] }
 twitchchat = "0.9.2"
 unicode-segmentation = "1.6.0"
 unicode-width = "0.1.7"
-futures = "0.3.4"
 
 [patch.crates-io]
 mio = { git = "https://github.com/museun/mio", branch = "winapi03" }
