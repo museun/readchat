@@ -71,7 +71,7 @@ pub fn truncate_or_pad(input: &str, max: usize) -> String {
     }
 }
 
-use twitchchat::color::RGB;
+use twitchchat::twitch::color::RGB;
 
 pub fn normalize_color(RGB(r, g, b): RGB, conf: f64) -> RGB {
     use std::cmp::{max, min};

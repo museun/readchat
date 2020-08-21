@@ -10,7 +10,7 @@ pub enum UpdateMode {
 }
 
 pub struct Window {
-    queue: Queue<twitch::Message>,
+    queue: Queue<Privmsg<'static>>,
     left: usize,
     pad: String,
 }
@@ -25,12 +25,6 @@ impl Window {
     }
 
     pub fn push(&mut self, message: Privmsg<'static>) {
-        let message = twitch::Message {
-            color: util::normalize_color(message.color().unwrap_or_default().rgb, 35.0),
-            nick: message.name,
-            data: message.data,
-        };
-
         self.queue.push(message);
     }
 
@@ -39,16 +33,17 @@ impl Window {
 
         fn print_message(
             stdout: &mut std::io::Stdout,
-            msg: &twitch::Message,
+            msg: &Privmsg<'_>,
             left: usize,
             w: usize,
             pad: &str,
         ) -> anyhow::Result<()> {
-            let twitchchat::color::RGB(r, g, b) = msg.color;
-            let style = style(util::truncate_or_pad(&msg.nick, left)).with(Color::Rgb { r, g, b });
+            let twitchchat::twitch::color::RGB(r, g, b) = msg.color().unwrap_or_default().rgb;
+            let style =
+                style(util::truncate_or_pad(&msg.name(), left)).with(Color::Rgb { r, g, b });
             crossterm::queue!(stdout, Print(style))?;
 
-            for (i, part) in util::partition(&msg.data, w - left - 1)
+            for (i, part) in util::partition(&msg.data(), w - left - 1)
                 .into_iter()
                 .enumerate()
             {

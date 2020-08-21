@@ -1,32 +1,18 @@
-use std::borrow::Cow;
 use std::io::Write as _;
 
-pub struct Message {
-    pub color: twitchchat::color::RGB,
-    pub nick: Cow<'static, str>,
-    pub data: Cow<'static, str>,
-}
+use twitchchat::{
+    channel::Sender,
+    messages::{Commands, Privmsg},
+    Status,
+};
 
-pub struct TwitchChat {
-    pub dispatcher: twitchchat::Dispatcher,
-    runner: twitchchat::Runner,
-    control: twitchchat::Control,
-}
+pub struct TwitchChat;
 
 impl TwitchChat {
-    pub fn new() -> Self {
-        let dispatcher = twitchchat::Dispatcher::new();
-        let (runner, control) = twitchchat::Runner::new(dispatcher.clone(), Default::default());
-
-        Self {
-            dispatcher,
-            runner,
-            control,
-        }
-    }
-
-    pub async fn run_to_completion(mut self, channel: String) -> anyhow::Result<()> {
-        let (nick, pass) = twitchchat::ANONYMOUS_LOGIN;
+    pub async fn run_to_completion(
+        channel: String,
+        messages: Sender<Privmsg<'static>>,
+    ) -> anyhow::Result<()> {
         use crossterm::style::{style, Color, Print};
 
         crossterm::execute!(
@@ -35,7 +21,15 @@ impl TwitchChat {
             crossterm::cursor::MoveToNextLine(1),
         )?;
 
-        let conn = twitchchat::connect_easy(nick, pass).await?;
+        let user_config = twitchchat::UserConfig::builder()
+            .anonymous()
+            .enable_all_capabilities()
+            .build()
+            .unwrap();
+        let connector = twitchchat::connector::AsyncIoConnector::twitch();
+
+        let mut runner = twitchchat::AsyncRunner::connect(connector, &user_config).await?;
+
         crossterm::execute!(
             std::io::stdout(),
             crossterm::cursor::MoveToPreviousLine(1),
@@ -45,34 +39,26 @@ impl TwitchChat {
             crossterm::cursor::MoveToNextLine(1),
         )?;
 
-        self.control.writer().join(&channel).await?;
+        runner.join(&channel).await?;
+        crossterm::execute!(
+            std::io::stdout(),
+            crossterm::cursor::MoveToPreviousLine(1),
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine),
+            Print(style("joined ").with(Color::Cyan)),
+            Print(style(channel).with(Color::Green)),
+            crossterm::cursor::MoveToNextLine(1),
+        )?;
 
-        use futures::prelude::*;
-
-        let wait_for = self
-            .dispatcher
-            .wait_for::<twitchchat::events::RoomState>()
-            .inspect(move |_| {
-                let _ = crossterm::execute!(
-                    std::io::stdout(),
-                    crossterm::cursor::MoveToPreviousLine(1),
-                    crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine),
-                    Print(style("joined ").with(Color::Cyan)),
-                    Print(style(channel).with(Color::Green)),
-                    crossterm::cursor::MoveToNextLine(1),
-                );
-            });
-
-        let (left, _) = tokio::join! {
-            self.runner.run(conn),
-            wait_for
-        };
-
-        match left? {
-            twitchchat::Status::Canceled => {}
-            twitchchat::Status::Eof => {}
+        loop {
+            match runner.next_message().await? {
+                Status::Message(Commands::Privmsg(msg)) => {
+                    if messages.send(msg).await.is_err() {
+                        break Ok(());
+                    }
+                }
+                Status::Quit | Status::Eof => break Ok(()),
+                _ => continue,
+            }
         }
-
-        Ok(())
     }
 }

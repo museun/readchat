@@ -5,12 +5,9 @@ mod twitch;
 mod util;
 mod window;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let args = args::Args::parse()?;
-
     let _screen = window::AltScreen::new();
-    term::main_loop(args).await?;
-
-    Ok(())
+    let fut = term::main_loop(args);
+    async_executor::Executor::new().run(fut)
 }
