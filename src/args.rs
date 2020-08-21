@@ -1,4 +1,4 @@
-const HELP_MESSAGE: &'static str = "
+const HELP_MESSAGE: &str = "
 description:
     simply read-only client for a single twitch channel's chat
 

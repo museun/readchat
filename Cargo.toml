@@ -1,18 +1,18 @@
 [package]
 name = "readchat"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["museun <museun@outlook.com>"]
 edition = "2018"
 license = "Unlicense"
 build = "build.rs"
 
 [dependencies]
-anyhow = "1.0.27"
-crossterm = { version = "0.16.0", features = ["event-stream"] }
-futures = "0.3.4"
-pico-args = "0.3.1"
-tokio = { version = "0.2.13", features = ["macros", "rt-threaded", "sync"] }
-twitchchat = "0.9.2"
+anyhow               = "1.0.32"
+async-executor       = "0.1.2"
+crossterm            = { version = "0.17.7", features = ["event-stream"] }
+futures-lite         = "0.1.11"
+pico-args            = "0.3.4"
+twitchchat           = { version = "0.12.0-alpha.2", features = ["async-io"] }
 unicode-segmentation = "1.6.0"
-unicode-width = "0.1.7"
-
+unicode-width        = "0.1.8"
+pin-project-lite = "0.1.7"
