@@ -12,7 +12,10 @@ async-executor       = "0.1.2"
 crossterm            = { version = "0.17.7", features = ["event-stream"] }
 futures-lite         = "0.1.11"
 pico-args            = "0.3.4"
-twitchchat           = { version = "0.12.0-alpha.2", features = ["async-io"] }
+pin-project-lite     = "0.1.7"
+twitchchat           = { version = "0.12.2", features = ["async-io"] }
 unicode-segmentation = "1.6.0"
 unicode-width        = "0.1.8"
-pin-project-lite = "0.1.7"
+
+[patch.crates-io]
+crossterm = { git = "https://github.com/museun/crossterm", branch = "futures-lite" }
