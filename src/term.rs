@@ -7,6 +7,7 @@ use super::{
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyModifiers};
 use futures_lite::StreamExt as _;
 
+use std::sync::Arc;
 use std::{
     future::Future,
     pin::Pin,
@@ -36,6 +37,7 @@ pub async fn main_loop(
         buffer_max,
         channel,
     }: Args,
+    ex: Arc<async_executor::Executor<'static>>,
 ) -> anyhow::Result<()> {
     use crossterm::style::{style, Color, Print};
     use std::io::Write as _;
@@ -52,7 +54,7 @@ pub async fn main_loop(
     let (messages_tx, mut messages_rx) = twitchchat::channel::bounded(64);
     let (done_tx, mut done_rx) = twitchchat::channel::bounded(1);
 
-    async_executor::Task::spawn(async move {
+    ex.spawn(async move {
         let res = TwitchChat::run_to_completion(channel, messages_tx).await;
         let _ = done_tx.send(res).await;
     })

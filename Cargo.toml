@@ -8,14 +8,14 @@ build = "build.rs"
 
 [dependencies]
 anyhow               = "1.0.32"
-async-executor       = "0.1.2"
-crossterm            = { version = "0.17.7", features = ["event-stream"] }
-futures-lite         = "0.1.11"
+async-executor       = "1.3.0"
+crossterm            = { version = "0.18.0", features = ["event-stream"] }
+futures-lite         = "1.8.0"
 pico-args            = "0.3.4"
-pin-project-lite     = "0.1.7"
-twitchchat           = { version = "0.12.2", features = ["async-io"] }
+pin-project-lite     = "0.1.10"
+twitchchat           = { version = "0.14.4", features = ["async", "async-io"] }
 unicode-segmentation = "1.6.0"
 unicode-width        = "0.1.8"
 
 [patch.crates-io]
-crossterm = { git = "https://github.com/museun/crossterm", branch = "futures-lite" }
+# crossterm = { git = "https://github.com/museun/crossterm", branch = "futures-lite" }

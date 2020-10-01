@@ -24,9 +24,9 @@ impl TwitchChat {
         let user_config = twitchchat::UserConfig::builder()
             .anonymous()
             .enable_all_capabilities()
-            .build()
-            .unwrap();
-        let connector = twitchchat::connector::AsyncIoConnector::twitch();
+            .build()?;
+
+        let connector = twitchchat::connector::AsyncIoConnector::twitch()?;
 
         let mut runner = twitchchat::AsyncRunner::connect(connector, &user_config).await?;
 

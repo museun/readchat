@@ -54,6 +54,7 @@ impl Window {
                 crossterm::queue!(stdout, Print(part))?;
                 crossterm::queue!(stdout, Print("\n"))?;
             }
+            crossterm::queue!(stdout, crossterm::cursor::MoveToColumn(0))?;
             crossterm::queue!(stdout, crossterm::cursor::Hide)?;
             Ok(())
         }
@@ -98,6 +99,8 @@ impl AltScreen {
 impl Drop for AltScreen {
     fn drop(&mut self) {
         let _ = terminal::disable_raw_mode();
-        let _ = crossterm::execute!(std::io::stdout(), terminal::LeaveAlternateScreen);
+        let mut out = std::io::stdout();
+        let _ = crossterm::execute!(out, terminal::LeaveAlternateScreen);
+        let _ = crossterm::execute!(out, crossterm::cursor::Show);
     }
 }
