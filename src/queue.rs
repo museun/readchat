@@ -33,6 +33,10 @@ impl<T> Queue<T> {
         self.len() == 0
     }
 
+    pub fn last(&self) -> Option<&T> {
+        self.buf.back()
+    }
+
     pub fn iter(&self) -> Iter<T> {
         self.buf.iter()
     }

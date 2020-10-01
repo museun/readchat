@@ -1,22 +1,93 @@
-use crossterm::terminal;
-use std::io::Write;
-
+use super::{args::Args, twitch::TwitchChat};
 use super::{queue::Queue, *};
-use twitchchat::messages::Privmsg;
 
-pub enum UpdateMode {
+use std::io::Write;
+use std::sync::Arc;
+
+use twitchchat::connector::async_io::Connector;
+use twitchchat::messages::Privmsg;
+use twitchchat::twitch::color::RGB;
+
+use crossterm::{
+    cursor::*,
+    event::*,
+    style::*,
+    terminal::{self, *},
+};
+
+use futures_lite::StreamExt as _;
+
+pub async fn main_loop(
+    args: Args,
+    ex: Arc<async_executor::Executor<'static>>,
+) -> anyhow::Result<()> {
+    let mut window = Window::new(args.nick_max, args.buffer_max);
+    let mut reader = EventStream::new();
+
+    let (messages_tx, mut messages_rx) = twitchchat::channel::bounded(64);
+    let (done_tx, mut done_rx) = twitchchat::channel::bounded(1);
+
+    let fut = {
+        let connector = if args.debug {
+            let addr = crate::testing::make_interesting_chat(15)?;
+            Connector::custom(addr)
+        } else {
+            Connector::twitch()
+        }?;
+
+        async move {
+            let res = TwitchChat::run_to_completion(args.channel, messages_tx, connector).await;
+            done_tx.send(res).await
+        }
+    };
+
+    ex.spawn(fut).detach();
+
+    use keys::LoopState;
+    use util::Select;
+
+    loop {
+        let next_event = reader.next();
+        let next_msg = messages_rx.next();
+        let done = done_rx.next();
+
+        let select = util::select_3(next_event, next_msg, done).await;
+        match select {
+            Select::A(Some(Ok(event))) => match event {
+                Event::Key(event) => match keys::handle(event) {
+                    LoopState::Continue => continue,
+                    LoopState::Break => break,
+                },
+                Event::Resize(_, _) => window.update(UpdateMode::Redraw)?,
+                _ => {}
+            },
+
+            Select::B(Some(msg)) => {
+                window.push(msg);
+                window.update(UpdateMode::Append)?;
+            }
+
+            Select::C(_done) => break,
+            _ => break,
+        }
+    }
+
+    Ok(())
+}
+
+enum UpdateMode {
     Redraw,
     Append,
 }
 
-pub struct Window {
+struct Window {
     queue: Queue<Privmsg<'static>>,
     left: usize,
     pad: String,
 }
 
 impl Window {
-    pub fn new(left: usize, limit: usize) -> Self {
+    fn new(left: usize, limit: usize) -> Self {
         Self {
             left,
             pad: " ".repeat(left),
@@ -24,83 +95,67 @@ impl Window {
         }
     }
 
-    pub fn push(&mut self, message: Privmsg<'static>) {
+    fn push(&mut self, message: Privmsg<'static>) {
         self.queue.push(message);
     }
 
-    pub fn update(&mut self, update: UpdateMode) -> anyhow::Result<()> {
-        use crossterm::style::{style, Color, Print};
-
+    fn update(&mut self, update: UpdateMode) -> anyhow::Result<()> {
         fn print_message(
             stdout: &mut std::io::Stdout,
             msg: &Privmsg<'_>,
             left: usize,
-            w: usize,
+            width: usize,
             pad: &str,
         ) -> anyhow::Result<()> {
-            let twitchchat::twitch::color::RGB(r, g, b) = msg.color().unwrap_or_default().rgb;
-            let style =
-                style(util::truncate_or_pad(&msg.name(), left)).with(Color::Rgb { r, g, b });
-            crossterm::queue!(stdout, Print(style))?;
+            let RGB(r, g, b) = msg.color().unwrap_or_default().rgb;
+            let color = Color::Rgb { r, g, b };
+            let name = util::truncate_or_pad(&msg.name(), left);
 
-            for (i, part) in util::partition(&msg.data(), w - left - 1)
+            crossterm::queue!(
+                stdout,
+                // Print("\n"),
+                MoveToColumn(0),
+                Print(style(name).with(color))
+            )?;
+
+            for (i, part) in util::partition(&msg.data(), width - left - 1)
                 .into_iter()
                 .enumerate()
             {
                 if i > 0 {
-                    crossterm::queue!(stdout, Print(pad))?;
+                    // if cfg!(target_os = "windows") {
+                    // crossterm::queue!(stdout, Print("\n"), Print(pad))?;
+                    // } else {
+                    crossterm::queue!(stdout, MoveToNextLine(1), Print(pad))?;
+                    // }
                 }
-                crossterm::queue!(stdout, Print(" "))?;
-                crossterm::queue!(stdout, Print(part))?;
-                crossterm::queue!(stdout, Print("\n"))?;
+                crossterm::queue!(stdout, Print(" "), Print(style(part).with(color)))?;
             }
-            crossterm::queue!(stdout, crossterm::cursor::MoveToColumn(0))?;
-            crossterm::queue!(stdout, crossterm::cursor::Hide)?;
+
+            crossterm::queue!(stdout, MoveToNextLine(1))?;
+
             Ok(())
         }
 
-        let (w, _h) = terminal::size()?;
+        let (width, _h) = terminal::size()?;
         let mut stdout = std::io::stdout();
 
         match update {
+            UpdateMode::Redraw if self.queue.is_empty() => return Ok(()),
             UpdateMode::Redraw => {
-                if self.queue.is_empty() {
-                    return Ok(());
-                }
-
-                crossterm::execute!(stdout, terminal::Clear(terminal::ClearType::All))?;
+                crossterm::execute!(stdout, Clear(ClearType::All))?;
                 for msg in self.queue.iter() {
-                    print_message(&mut stdout, msg, self.left, w as _, &self.pad)?;
+                    print_message(&mut stdout, msg, self.left, width as _, &self.pad)?;
                 }
             }
             UpdateMode::Append => {
-                let msg = self.queue.iter().rev().next().unwrap();
-                print_message(&mut stdout, msg, self.left, w as _, &self.pad)?;
+                if let Some(msg) = self.queue.last() {
+                    print_message(&mut stdout, msg, self.left, width as _, &self.pad)?;
+                }
             }
         }
 
-        stdout.flush().map_err(Into::into)
-    }
-}
-
-pub struct AltScreen {}
-
-impl AltScreen {
-    pub fn new() -> anyhow::Result<Self> {
-        let mut stdout = std::io::stdout();
-        crossterm::execute!(stdout, terminal::EnterAlternateScreen)?;
-        terminal::enable_raw_mode()?;
-        crossterm::execute!(stdout, terminal::Clear(terminal::ClearType::All))?;
-        crossterm::execute!(stdout, crossterm::cursor::Hide)?;
-        Ok(Self {})
-    }
-}
-
-impl Drop for AltScreen {
-    fn drop(&mut self) {
-        let _ = terminal::disable_raw_mode();
-        let mut out = std::io::stdout();
-        let _ = crossterm::execute!(out, terminal::LeaveAlternateScreen);
-        let _ = crossterm::execute!(out, crossterm::cursor::Show);
+        stdout.flush()?;
+        Ok(())
     }
 }
