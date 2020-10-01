@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::net::TcpListener;
 use std::net::TcpStream;
@@ -41,8 +42,7 @@ fn garbage_out(mut io: &TcpStream, chatters: &[Chatter]) -> anyhow::Result<()> {
             msg = chatter.speak()
         )?;
 
-        //fastrand::u64(150..1500)
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(Duration::from_millis(fastrand::u64(150..1500)));
     }
     Ok(())
 }
@@ -59,10 +59,18 @@ fn feed_chat(listener: TcpListener, chatters: Vec<Chatter>) {
     }
 }
 
-pub fn make_interesting_chat(chatters: usize) -> anyhow::Result<std::net::SocketAddr> {
-    let chatters: Vec<_> = std::iter::repeat_with(Chatter::new)
-        .take(chatters)
-        .collect();
+pub fn make_interesting_chat(unique: usize) -> anyhow::Result<std::net::SocketAddr> {
+    let mut chatters = Vec::with_capacity(unique);
+    let mut seen = HashSet::new();
+    for chatter in std::iter::repeat_with(Chatter::new) {
+        if seen.insert(chatter.name.clone()) {
+            chatters.push(chatter);
+        }
+
+        if chatters.len() == unique {
+            break;
+        }
+    }
 
     let listener = TcpListener::bind("localhost:0")?;
     let addr = listener.local_addr()?;
@@ -92,13 +100,10 @@ impl Chatter {
                 .collect::<String>(),
         );
 
-        let r = || fastrand::u8(..);
-        let color = twitchchat::twitch::color::RGB(r(), r(), r());
-
-        // let (_, color) = twitchchat::twitch::color::twitch_colors()
-        //     .choose()
-        //     .copied()
-        //     .unwrap();
+        let (_, color) = twitchchat::twitch::color::twitch_colors()
+            .choose()
+            .copied()
+            .unwrap();
 
         Self { name, color }
     }

@@ -1,7 +1,6 @@
 use std::io::Write;
 use std::net::TcpStream;
 
-use twitchchat::messages::Join;
 use twitchchat::messages::{Commands, Privmsg};
 use twitchchat::FromIrcMessage;
 
@@ -32,10 +31,14 @@ impl TwitchChat {
             .enable_all_capabilities()
             .build()?;
 
+        let mut decoder = twitchchat::Decoder::new(conn);
         let mut encoder = twitchchat::Encoder::new(conn);
         encoder.encode(twitchchat::commands::register(&user_config))?;
 
         let mut out = std::io::stdout();
+
+        // ensure its converted properly.
+        let channel = twitchchat::commands::Channel::new(&channel).to_string();
 
         replace_line(
             &mut out,
@@ -46,11 +49,9 @@ impl TwitchChat {
             ),
         )?;
 
-        encoder.encode(twitchchat::commands::join(&channel))?;
+        // TODO timeout logic here
 
-        let we_joined = |msg: &Join| msg.channel() == channel && msg.name() == "justinfan1234";
-
-        let mut decoder = twitchchat::Decoder::new(conn);
+        // wait for ready
         while let Some(msg) = decoder.next() {
             let msg = twitchchat::messages::Commands::from_irc(msg?)?;
             if let Commands::IrcReady(_) = msg {
@@ -58,31 +59,32 @@ impl TwitchChat {
             }
         }
 
-        while let Some(Ok(msg)) = decoder.next() {
-            match twitchchat::messages::Commands::from_irc(msg)? {
-                Commands::Join(join) if we_joined(&join) => {
-                    replace_line(
-                        &mut out,
-                        format!(
-                            "{}{}",
-                            style("joined ").with(Color::Cyan),
-                            style(&channel).with(Color::Green),
-                        ),
-                    )?;
-                }
-                Commands::Privmsg(msg) => {
-                    if messages.send(msg).is_err() {
-                        break;
-                    }
-                }
+        // join the channel
+        encoder.encode(twitchchat::commands::join(&channel))?;
 
-                // Commands::ClearChat(_) => {}
-                // Commands::ClearMsg(_) => {}
-                // Commands::HostTarget(_) => {}
-                // Commands::Notice(_) => {}
-                // Commands::UserNotice(_) => {}
-                _ => {}
+        // wait for join
+        while let Some(msg) = decoder.next() {
+            let msg = twitchchat::messages::Commands::from_irc(msg?)?;
+            if let Commands::Join(msg) = msg {
+                if msg.channel() == &*channel && msg.name() == "justinfan1234" {
+                    break;
+                }
             }
+        }
+
+        // and then run the main loop
+        while let Some(Ok(msg)) = decoder.next() {
+            if let Commands::Privmsg(msg) = twitchchat::messages::Commands::from_irc(msg)? {
+                if messages.send(msg).is_err() {
+                    break;
+                }
+            }
+
+            // Commands::ClearChat(_) => {}
+            // Commands::ClearMsg(_) => {}
+            // Commands::HostTarget(_) => {}
+            // Commands::Notice(_) => {}
+            // Commands::UserNotice(_) => {}
         }
 
         Ok(())

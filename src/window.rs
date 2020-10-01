@@ -28,7 +28,7 @@ pub fn main_loop(args: Args) -> anyhow::Result<()> {
     let mut window = Window::new(args.nick_max, args.buffer_max);
 
     let conn = if args.debug {
-        let addr = crate::testing::make_interesting_chat(15)?;
+        let addr = crate::testing::make_interesting_chat(150)?;
         std::net::TcpStream::connect(addr)?
     } else {
         std::net::TcpStream::connect(twitchchat::TWITCH_IRC_ADDRESS)?
@@ -99,28 +99,20 @@ impl Window {
             let color = Color::Rgb { r, g, b };
             let name = util::truncate_or_pad(&msg.name(), left);
 
-            crossterm::queue!(
-                stdout,
-                // Print("\n"),
-                MoveToColumn(0),
-                Print(style(name).with(color))
-            )?;
+            let name = style(name).with(color);
 
             for (i, part) in util::partition(&msg.data(), width - left - 1)
                 .into_iter()
                 .enumerate()
             {
-                if i > 0 {
-                    // if cfg!(target_os = "windows") {
-                    // crossterm::queue!(stdout, Print("\n"), Print(pad))?;
-                    // } else {
-                    crossterm::queue!(stdout, MoveToNextLine(1), Print(pad))?;
-                    // }
+                crossterm::queue!(stdout, Print("\n"), MoveToColumn(0))?;
+                if i == 0 {
+                    crossterm::queue!(stdout, Print(&name))?;
+                } else {
+                    crossterm::queue!(stdout, Print(pad))?;
                 }
-                crossterm::queue!(stdout, Print(" "), Print(style(part).with(color)))?;
+                crossterm::queue!(stdout, Print(" "), Print(part))?;
             }
-
-            crossterm::queue!(stdout, MoveToNextLine(1))?;
 
             Ok(())
         }
