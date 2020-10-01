@@ -1,27 +1,25 @@
 use std::io::Write;
+use std::net::TcpStream;
 
-use twitchchat::{
-    channel::Sender,
-    connector::Connector,
-    messages::{Commands, Privmsg},
-    Status,
-};
+use twitchchat::messages::Join;
+use twitchchat::messages::{Commands, Privmsg};
+use twitchchat::FromIrcMessage;
+
+use channel::Sender;
+use crossbeam_channel as channel;
 
 use crossterm::{cursor::*, style::*, terminal::*};
-use futures_lite::{AsyncRead, AsyncWrite};
 
 pub struct TwitchChat;
 
 impl TwitchChat {
-    pub async fn run_to_completion<C>(
+    pub fn run_to_completion(
         channel: String,
         messages: Sender<Privmsg<'static>>,
-        connector: C,
-    ) -> anyhow::Result<()>
-    where
-        C: Connector,
-        for<'a> &'a C::Output: AsyncRead + AsyncWrite + Send + Sync + Unpin,
-    {
+        conn: TcpStream,
+    ) -> anyhow::Result<()> {
+        let conn = &conn;
+
         crossterm::execute!(
             std::io::stdout(),
             MoveTo(0, 0),
@@ -33,7 +31,9 @@ impl TwitchChat {
             .anonymous()
             .enable_all_capabilities()
             .build()?;
-        let mut runner = twitchchat::AsyncRunner::connect(connector, &user_config).await?;
+
+        let mut encoder = twitchchat::Encoder::new(conn);
+        encoder.encode(twitchchat::commands::register(&user_config))?;
 
         let mut out = std::io::stdout();
 
@@ -46,28 +46,46 @@ impl TwitchChat {
             ),
         )?;
 
-        runner.join(&channel).await?;
+        encoder.encode(twitchchat::commands::join(&channel))?;
 
-        replace_line(
-            &mut out,
-            format!(
-                "{}{}",
-                style("joined ").with(Color::Cyan),
-                style(&channel).with(Color::Green),
-            ),
-        )?;
+        let we_joined = |msg: &Join| msg.channel() == channel && msg.name() == "justinfan1234";
 
-        loop {
-            match runner.next_message().await? {
-                Status::Message(Commands::Privmsg(msg)) => {
-                    if messages.send(msg).await.is_err() {
-                        break Ok(());
-                    }
-                }
-                Status::Quit | Status::Eof => break Ok(()),
-                _ => continue,
+        let mut decoder = twitchchat::Decoder::new(conn);
+        while let Some(msg) = decoder.next() {
+            let msg = twitchchat::messages::Commands::from_irc(msg?)?;
+            if let Commands::IrcReady(_) = msg {
+                break;
             }
         }
+
+        while let Some(Ok(msg)) = decoder.next() {
+            match twitchchat::messages::Commands::from_irc(msg)? {
+                Commands::Join(join) if we_joined(&join) => {
+                    replace_line(
+                        &mut out,
+                        format!(
+                            "{}{}",
+                            style("joined ").with(Color::Cyan),
+                            style(&channel).with(Color::Green),
+                        ),
+                    )?;
+                }
+                Commands::Privmsg(msg) => {
+                    if messages.send(msg).is_err() {
+                        break;
+                    }
+                }
+
+                // Commands::ClearChat(_) => {}
+                // Commands::ClearMsg(_) => {}
+                // Commands::HostTarget(_) => {}
+                // Commands::Notice(_) => {}
+                // Commands::UserNotice(_) => {}
+                _ => {}
+            }
+        }
+
+        Ok(())
     }
 }
 

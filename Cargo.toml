@@ -8,18 +8,10 @@ build = "build.rs"
 
 [dependencies]
 anyhow               = "1.0.32"
-
-crossterm            = { version = "0.18.0", features = ["event-stream"] }
+crossbeam-channel    = "0.4.4"
+crossterm            = "0.18.0"
 fastrand             = "1.3.5"
 pico-args            = "0.3.4"
-
+twitchchat           = "0.14.4"
 unicode-segmentation = "1.6.0"
 unicode-width        = "0.1.8"
-
-twitchchat           = { version = "0.14.4", features = ["async", "async-io"] } 
-
-async-executor       = "1.3.0"
-futures-lite         = "1.8.0"
-pin-project-lite     = "0.1.10"
-
-# crossbeam-channel = "0.4.4"

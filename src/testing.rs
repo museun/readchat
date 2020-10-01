@@ -41,7 +41,8 @@ fn garbage_out(mut io: &TcpStream, chatters: &[Chatter]) -> anyhow::Result<()> {
             msg = chatter.speak()
         )?;
 
-        std::thread::sleep(Duration::from_millis(fastrand::u64(150..151)));
+        //fastrand::u64(150..1500)
+        std::thread::sleep(Duration::from_millis(50));
     }
     Ok(())
 }
@@ -66,7 +67,7 @@ pub fn make_interesting_chat(chatters: usize) -> anyhow::Result<std::net::Socket
     let listener = TcpListener::bind("localhost:0")?;
     let addr = listener.local_addr()?;
 
-    std::thread::spawn(move || feed_chat(listener, chatters));
+    let _ = std::thread::spawn(move || feed_chat(listener, chatters));
 
     Ok(addr)
 }

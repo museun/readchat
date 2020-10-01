@@ -1,12 +1,17 @@
-use super::{args::Args, twitch::TwitchChat};
-use super::{queue::Queue, *};
+use super::{
+    args::Args,
+    keys::{self, LoopState},
+    queue::Queue,
+    twitch::TwitchChat,
+    util,
+};
 
 use std::io::Write;
-use std::sync::Arc;
 
-use twitchchat::connector::async_io::Connector;
 use twitchchat::messages::Privmsg;
 use twitchchat::twitch::color::RGB;
+
+use crossbeam_channel as channel;
 
 use crossterm::{
     cursor::*,
@@ -15,60 +20,43 @@ use crossterm::{
     terminal::{self, *},
 };
 
-use futures_lite::StreamExt as _;
+fn keep_running(ch: &channel::Receiver<()>) -> bool {
+    matches!(ch.try_recv(), Err(channel::TryRecvError::Empty))
+}
 
-pub async fn main_loop(
-    args: Args,
-    ex: Arc<async_executor::Executor<'static>>,
-) -> anyhow::Result<()> {
+pub fn main_loop(args: Args) -> anyhow::Result<()> {
     let mut window = Window::new(args.nick_max, args.buffer_max);
-    let mut reader = EventStream::new();
 
-    let (messages_tx, mut messages_rx) = twitchchat::channel::bounded(64);
-    let (done_tx, mut done_rx) = twitchchat::channel::bounded(1);
-
-    let fut = {
-        let connector = if args.debug {
-            let addr = crate::testing::make_interesting_chat(15)?;
-            Connector::custom(addr)
-        } else {
-            Connector::twitch()
-        }?;
-
-        async move {
-            let res = TwitchChat::run_to_completion(args.channel, messages_tx, connector).await;
-            done_tx.send(res).await
-        }
+    let conn = if args.debug {
+        let addr = crate::testing::make_interesting_chat(15)?;
+        std::net::TcpStream::connect(addr)?
+    } else {
+        std::net::TcpStream::connect(twitchchat::TWITCH_IRC_ADDRESS)?
     };
 
-    ex.spawn(fut).detach();
+    let (messages_tx, messages) = channel::bounded(64);
+    let (done_tx, done) = channel::bounded(1);
 
-    use keys::LoopState;
-    use util::Select;
+    let _ = std::thread::spawn(move || {
+        let _ = TwitchChat::run_to_completion(args.channel, messages_tx, conn);
+        drop(done_tx)
+    });
 
-    loop {
-        let next_event = reader.next();
-        let next_msg = messages_rx.next();
-        let done = done_rx.next();
-
-        let select = util::select_3(next_event, next_msg, done).await;
-        match select {
-            Select::A(Some(Ok(event))) => match event {
+    while keep_running(&done) {
+        if crossterm::event::poll(std::time::Duration::from_millis(150))? {
+            match crossterm::event::read()? {
                 Event::Key(event) => match keys::handle(event) {
                     LoopState::Continue => continue,
                     LoopState::Break => break,
                 },
                 Event::Resize(_, _) => window.update(UpdateMode::Redraw)?,
                 _ => {}
-            },
-
-            Select::B(Some(msg)) => {
-                window.push(msg);
-                window.update(UpdateMode::Append)?;
             }
+        }
 
-            Select::C(_done) => break,
-            _ => break,
+        for msg in messages.try_iter() {
+            window.push(msg);
+            window.update(UpdateMode::Append)?;
         }
     }
 
