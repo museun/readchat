@@ -117,10 +117,10 @@ fn print_message(
 
     let p = state.prefix.map(|_| 4).unwrap_or(0);
 
-    let name = truncate::truncate_or_pad(&msg.name(), state.left - p);
+    let name = truncate::truncate_or_pad(msg.name(), state.left - p);
     let name = style(name).with(color);
 
-    let partition = partition::partition(&msg.data(), state.width - p - state.left - 1);
+    let partition = partition::partition(msg.data(), state.width - p - state.left - 1);
 
     for (i, part) in partition.into_iter().enumerate() {
         let first = i == 0;

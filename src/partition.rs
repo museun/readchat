@@ -1,7 +1,7 @@
 use unicode_segmentation::UnicodeSegmentation as _;
 use unicode_width::UnicodeWidthStr as _;
 
-pub(crate) fn partition(input: &str, max: usize) -> Vec<String> {
+pub fn partition(input: &str, max: usize) -> Vec<String> {
     let mut vec = vec![];
 
     let new_string = || String::with_capacity(max);
