@@ -1,8 +1,10 @@
-use std::io::Write;
-use std::net::TcpStream;
+use std::{io::Write, net::TcpStream};
 
-use twitchchat::messages::{Commands, Privmsg};
-use twitchchat::FromIrcMessage;
+use twitchchat::{
+    commands::{self, Channel},
+    messages::{Commands, Privmsg},
+    FromIrcMessage as _,
+};
 
 use channel::Sender;
 use flume as channel;
@@ -30,12 +32,12 @@ pub(super) fn run_to_completion(
 
     let mut decoder = twitchchat::Decoder::new(conn);
     let mut encoder = twitchchat::Encoder::new(conn);
-    encoder.encode(twitchchat::commands::register(&user_config))?;
+    encoder.encode(commands::register(&user_config))?;
 
     let mut out = std::io::stdout();
 
     // ensure its converted properly.
-    let channel = twitchchat::commands::Channel::new(&channel).to_string();
+    let channel = Channel::new(&channel).to_string();
 
     replace_line(
         &mut out,
@@ -50,18 +52,18 @@ pub(super) fn run_to_completion(
 
     // wait for ready
     while let Some(msg) = decoder.next() {
-        let msg = twitchchat::messages::Commands::from_irc(msg?)?;
+        let msg = Commands::from_irc(msg?)?;
         if let Commands::IrcReady(_) = msg {
             break;
         }
     }
 
     // join the channel
-    encoder.encode(twitchchat::commands::join(&channel))?;
+    encoder.encode(commands::join(&channel))?;
 
     // wait for join
     while let Some(msg) = decoder.next() {
-        let msg = twitchchat::messages::Commands::from_irc(msg?)?;
+        let msg = Commands::from_irc(msg?)?;
         if let Commands::Join(msg) = msg {
             if msg.channel() == &*channel && msg.name() == "justinfan1234" {
                 replace_line(
@@ -79,12 +81,9 @@ pub(super) fn run_to_completion(
 
     // and then run the main loop
     while let Some(Ok(msg)) = decoder.next() {
-        match twitchchat::messages::Commands::from_irc(msg)? {
+        match Commands::from_irc(msg)? {
             Commands::Ping(msg) => {
-                if encoder
-                    .encode(twitchchat::commands::pong(msg.token()))
-                    .is_err()
-                {
+                if encoder.encode(commands::pong(msg.token())).is_err() {
                     break;
                 }
             }
