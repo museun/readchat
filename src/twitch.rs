@@ -5,7 +5,7 @@ use twitchchat::messages::{Commands, Privmsg};
 use twitchchat::FromIrcMessage;
 
 use channel::Sender;
-use crossbeam_channel as channel;
+use flume as channel;
 
 use crossterm::{cursor::*, style::*, terminal::*};
 

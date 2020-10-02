@@ -1,5 +1,5 @@
-use crossbeam_channel::Sender;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use flume::Sender;
 
 #[rustfmt::skip]
 macro_rules! key {

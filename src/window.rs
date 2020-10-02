@@ -11,7 +11,7 @@ use std::io::Write;
 use twitchchat::messages::Privmsg;
 use twitchchat::twitch::color::RGB;
 
-use crossbeam_channel as channel;
+use flume as channel;
 
 use crossterm::{
     cursor::*,

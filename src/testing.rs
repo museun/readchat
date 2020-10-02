@@ -43,7 +43,7 @@ fn garbage_out(mut io: &TcpStream, chatters: &[Chatter], opts: &TestingOpts) -> 
             msg = chatter.speak(opts)
         )?;
 
-        std::thread::sleep(Duration::from_millis(fastrand::u64(range)));
+        std::thread::sleep(Duration::from_millis(fastrand::u64(range.clone())));
     }
     Ok(())
 }
