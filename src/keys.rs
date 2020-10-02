@@ -10,7 +10,7 @@ macro_rules! key {
     ($code:ident) => { KeyEvent { code: KeyCode::$code, modifiers: KeyModifiers::NONE } };
 }
 
-fn is_mark(ch: char, mod_: KeyModifiers) -> bool {
+const fn is_mark(ch: char, mod_: KeyModifiers) -> bool {
     (matches!(ch, 'a'..='z' | '0'..='9') && matches!(mod_, KeyModifiers::NONE))
         || (matches!(ch, 'A'..='Z') && matches!(mod_, KeyModifiers::SHIFT))
 }
