@@ -10,6 +10,28 @@ a simple program to display twitch chat in your terminal
 
 > readchat some_channel
 
+```
+readchat 0.3.1
+
+description:
+    simply read-only client for a single twitch channel's chat
+
+usage:
+    readchat <channel>
+
+flags:
+    -h, --help             prints this message
+    -v, --version          prints the version
+    -d, --debug            use simulated debug stream instead
+
+optional flags:
+    -n, --nick-max <int>   the max width before truncation of nicknames
+    -b, --buffer-max <int> the number of messages to keep in the redraw queue
+
+arguments:
+    <string>               the twitch channel to join
+```
+
 ---
 
 ## keybinds:
