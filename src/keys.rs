@@ -26,8 +26,8 @@ pub fn handle(event: KeyEvent, events: &Sender<Message>) {
         key!(ctrl 'c') => send!(Quit),
         key!(ctrl 'r') => send!(Redraw),
         key!(ctrl 'd') => send!(Delete),
-        key!(shift '<') => send!(NameColumnShrink),
-        key!(shift '>') => send!(NameColumnGrow),
+        key!(char '[') | key!(shift '<') => send!(NameColumnShrink),
+        key!(char ']') | key!(shift '>') => send!(NameColumnGrow),
 
         KeyEvent {
             code: KeyCode::Char(ch),
