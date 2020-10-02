@@ -56,6 +56,10 @@ if you don't want to delete a message, just press `ctrl-d` again to exit this vi
 
 ### design decisions:
 
+while the 'mark view' is active. rendering is paused, but messages are still buffered.
+
+this makes it easier to pick a line without the chat scrolling. but the downside is that when you exit the view all of the new messages are inserted instantly.
+
 the 'marks' are generated in reverse order because the most commonly deleted messages are new ones. so.. `A` then backward to `Z`.
 
 if you have more than `26` lines, the total available marks are: `A-Z0-9a-z`.
