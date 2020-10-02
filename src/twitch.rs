@@ -9,94 +9,90 @@ use flume as channel;
 
 use crossterm::{cursor::*, style::*, terminal::*};
 
-pub struct TwitchChat;
+pub(super) fn run_to_completion(
+    channel: String,
+    messages: Sender<Privmsg<'static>>,
+    conn: TcpStream,
+) -> anyhow::Result<()> {
+    let conn = &conn;
 
-impl TwitchChat {
-    pub fn run_to_completion(
-        channel: String,
-        messages: Sender<Privmsg<'static>>,
-        conn: TcpStream,
-    ) -> anyhow::Result<()> {
-        let conn = &conn;
+    crossterm::execute!(
+        std::io::stdout(),
+        MoveTo(0, 0),
+        Print(style("connecting..").with(Color::Cyan)),
+        MoveToNextLine(1),
+    )?;
 
-        crossterm::execute!(
-            std::io::stdout(),
-            MoveTo(0, 0),
-            Print(style("connecting..").with(Color::Cyan)),
-            MoveToNextLine(1),
-        )?;
+    let user_config = twitchchat::UserConfig::builder()
+        .anonymous()
+        .enable_all_capabilities()
+        .build()?;
 
-        let user_config = twitchchat::UserConfig::builder()
-            .anonymous()
-            .enable_all_capabilities()
-            .build()?;
+    let mut decoder = twitchchat::Decoder::new(conn);
+    let mut encoder = twitchchat::Encoder::new(conn);
+    encoder.encode(twitchchat::commands::register(&user_config))?;
 
-        let mut decoder = twitchchat::Decoder::new(conn);
-        let mut encoder = twitchchat::Encoder::new(conn);
-        encoder.encode(twitchchat::commands::register(&user_config))?;
+    let mut out = std::io::stdout();
 
-        let mut out = std::io::stdout();
+    // ensure its converted properly.
+    let channel = twitchchat::commands::Channel::new(&channel).to_string();
 
-        // ensure its converted properly.
-        let channel = twitchchat::commands::Channel::new(&channel).to_string();
+    replace_line(
+        &mut out,
+        format!(
+            "{}{}",
+            style("joining ").with(Color::Cyan),
+            style(&channel).with(Color::Green),
+        ),
+    )?;
 
-        replace_line(
-            &mut out,
-            format!(
-                "{}{}",
-                style("joining ").with(Color::Cyan),
-                style(&channel).with(Color::Green),
-            ),
-        )?;
+    // TODO timeout logic here
 
-        // TODO timeout logic here
+    // wait for ready
+    while let Some(msg) = decoder.next() {
+        let msg = twitchchat::messages::Commands::from_irc(msg?)?;
+        if let Commands::IrcReady(_) = msg {
+            break;
+        }
+    }
 
-        // wait for ready
-        while let Some(msg) = decoder.next() {
-            let msg = twitchchat::messages::Commands::from_irc(msg?)?;
-            if let Commands::IrcReady(_) = msg {
+    // join the channel
+    encoder.encode(twitchchat::commands::join(&channel))?;
+
+    // wait for join
+    while let Some(msg) = decoder.next() {
+        let msg = twitchchat::messages::Commands::from_irc(msg?)?;
+        if let Commands::Join(msg) = msg {
+            if msg.channel() == &*channel && msg.name() == "justinfan1234" {
+                replace_line(
+                    &mut out,
+                    format!(
+                        "{}{}",
+                        style("joined ").with(Color::Cyan),
+                        style(&channel).with(Color::Green),
+                    ),
+                )?;
+                break;
+            }
+        }
+    }
+
+    // and then run the main loop
+    while let Some(Ok(msg)) = decoder.next() {
+        if let Commands::Privmsg(msg) = twitchchat::messages::Commands::from_irc(msg)? {
+            if messages.send(msg).is_err() {
                 break;
             }
         }
 
-        // join the channel
-        encoder.encode(twitchchat::commands::join(&channel))?;
-
-        // wait for join
-        while let Some(msg) = decoder.next() {
-            let msg = twitchchat::messages::Commands::from_irc(msg?)?;
-            if let Commands::Join(msg) = msg {
-                if msg.channel() == &*channel && msg.name() == "justinfan1234" {
-                    replace_line(
-                        &mut out,
-                        format!(
-                            "{}{}",
-                            style("joined ").with(Color::Cyan),
-                            style(&channel).with(Color::Green),
-                        ),
-                    )?;
-                    break;
-                }
-            }
-        }
-
-        // and then run the main loop
-        while let Some(Ok(msg)) = decoder.next() {
-            if let Commands::Privmsg(msg) = twitchchat::messages::Commands::from_irc(msg)? {
-                if messages.send(msg).is_err() {
-                    break;
-                }
-            }
-
-            // Commands::ClearChat(_) => {}
-            // Commands::ClearMsg(_) => {}
-            // Commands::HostTarget(_) => {}
-            // Commands::Notice(_) => {}
-            // Commands::UserNotice(_) => {}
-        }
-
-        Ok(())
+        // Commands::ClearChat(_) => {}
+        // Commands::ClearMsg(_) => {}
+        // Commands::HostTarget(_) => {}
+        // Commands::Notice(_) => {}
+        // Commands::UserNotice(_) => {}
     }
+
+    Ok(())
 }
 
 fn replace_line(w: &mut impl Write, line: impl ToString) -> anyhow::Result<()> {

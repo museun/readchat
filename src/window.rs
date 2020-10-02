@@ -1,113 +1,29 @@
-use super::{
-    args::Args,
-    keys::{self, Message},
-    queue::Queue,
-    twitch::TwitchChat,
-    util,
-};
+use super::{partition, queue::Queue, truncate};
 
 use std::io::Write;
 
-use twitchchat::messages::Privmsg;
-use twitchchat::twitch::color::RGB;
-
-use flume as channel;
+use twitchchat::{messages::Privmsg, twitch::color::RGB};
 
 use crossterm::{
     cursor::*,
-    event::*,
     style::*,
     terminal::{self, *},
 };
 
-fn keep_running(ch: &channel::Receiver<()>) -> bool {
-    matches!(ch.try_recv(), Err(channel::TryRecvError::Empty))
-}
-
-pub fn main_loop(args: Args) -> anyhow::Result<()> {
-    let mut window = Window::new(args.nick_max, args.buffer_max);
-
-    let conn = if args.debug {
-        let addr = crate::testing::make_interesting_chat(crate::testing::TestingOpts::load())?;
-        std::net::TcpStream::connect(addr)?
-    } else {
-        std::net::TcpStream::connect(twitchchat::TWITCH_IRC_ADDRESS)?
-    };
-
-    let (messages_tx, messages) = channel::bounded(64);
-    let (done_tx, done) = channel::bounded(1);
-
-    let _ = std::thread::spawn(move || {
-        let _ = TwitchChat::run_to_completion(args.channel, messages_tx, conn);
-        drop(done_tx)
-    });
-
-    let (events_tx, events_rx) = channel::bounded(32);
-
-    let mut waiting_for_key = false;
-
-    'outer: while keep_running(&done) {
-        if crossterm::event::poll(std::time::Duration::from_millis(150))? {
-            match crossterm::event::read()? {
-                Event::Key(event) => keys::handle(event, &events_tx),
-                Event::Resize(_, _) => window.update(UpdateMode::Redraw)?,
-                _ => {}
-            }
-        }
-
-        for event in events_rx.try_iter() {
-            match event {
-                Message::Quit => break 'outer,
-
-                Message::Redraw => window.update(UpdateMode::Redraw)?,
-
-                Message::Delete if !waiting_for_key => {
-                    waiting_for_key = true;
-                    window.update(UpdateMode::MarkAll)?;
-                }
-
-                Message::Delete if waiting_for_key => {
-                    waiting_for_key = false;
-                    window.update(UpdateMode::Redraw)?
-                }
-
-                Message::Char(ch) if waiting_for_key => {
-                    window.delete(ch)?;
-                    waiting_for_key = false;
-                    continue 'outer;
-                }
-
-                _ => {}
-            }
-        }
-
-        if waiting_for_key {
-            continue 'outer;
-        }
-
-        for msg in messages.try_iter() {
-            window.push(msg);
-            window.update(UpdateMode::Append)?;
-        }
-    }
-
-    Ok(())
-}
-
-enum UpdateMode {
+pub enum UpdateMode {
     Redraw,
     Append,
     MarkAll,
 }
 
-struct Window {
+pub(crate) struct Window {
     queue: Queue<Privmsg<'static>>,
     left: usize,
     pad: String,
 }
 
 impl Window {
-    fn new(left: usize, limit: usize) -> Self {
+    pub(crate) fn new(left: usize, limit: usize) -> Self {
         Self {
             left,
             pad: " ".repeat(left),
@@ -115,11 +31,11 @@ impl Window {
         }
     }
 
-    fn push(&mut self, message: Privmsg<'static>) {
+    pub(crate) fn push(&mut self, message: Privmsg<'static>) {
         self.queue.push(message);
     }
 
-    fn update(&mut self, update: UpdateMode) -> anyhow::Result<()> {
+    pub(crate) fn update(&mut self, update: UpdateMode) -> anyhow::Result<()> {
         let (width, height) = terminal::size()?;
         let mut stdout = std::io::stdout();
 
@@ -159,7 +75,7 @@ impl Window {
         Ok(())
     }
 
-    fn delete(&mut self, ch: char) -> anyhow::Result<()> {
+    pub(crate) fn delete(&mut self, ch: char) -> anyhow::Result<()> {
         if let Some(p) = ALPHA.iter().position(|&c| c == ch) {
             self.queue.remove_rev(p)
         }
@@ -200,10 +116,10 @@ fn print_message(
 
     let p = state.prefix.map(|_| 4).unwrap_or(0);
 
-    let name = util::truncate_or_pad(&msg.name(), state.left - p);
+    let name = truncate::truncate_or_pad(&msg.name(), state.left - p);
     let name = style(name).with(color);
 
-    let partition = util::partition(&msg.data(), state.width - p - state.left - 1);
+    let partition = partition::partition(&msg.data(), state.width - p - state.left - 1);
 
     for (i, part) in partition.into_iter().enumerate() {
         let first = i == 0;
