@@ -21,8 +21,8 @@ impl<T> Queue<T> {
         self.buf.push_back(item);
     }
 
-    pub fn remove_rev(&mut self, index: usize) {
-        self.buf.remove(self.len() - index - 1);
+    pub fn remove(&mut self, index: usize) {
+        self.buf.remove(index);
     }
 
     pub fn clear(&mut self) {

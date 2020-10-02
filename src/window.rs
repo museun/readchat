@@ -77,7 +77,8 @@ impl Window {
 
     pub(crate) fn delete(&mut self, ch: char) -> anyhow::Result<()> {
         if let Some(p) = ALPHA.iter().position(|&c| c == ch) {
-            self.queue.remove_rev(p)
+            let index = self.queue.len() - p - 1;
+            self.queue.remove(index)
         }
         self.update(UpdateMode::Redraw)
     }
