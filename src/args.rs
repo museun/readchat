@@ -11,6 +11,8 @@ flags:
     -h, --help             prints this message
     -v, --version          prints the version
     -d, --debug            use simulated debug stream instead
+    -t, --transcribe       log this channel to a file (when not in debug mode)
+    -l, --log-dir          print the log directory and exit
 
 optional flags:
     -n, --nick-max <int>   the max width before truncation of nicknames
@@ -25,6 +27,7 @@ pub struct Args {
     pub nick_max: usize,
     pub buffer_max: usize,
     pub debug: bool,
+    pub transcribe: bool,
 }
 
 impl Args {
@@ -41,36 +44,43 @@ impl Args {
             std::process::exit(0);
         }
 
+        if args.contains(["-l", "--log-dir"]) {
+            let dir = crate::Logger::get_dir()?;
+            println!("{}", dir.display());
+            std::process::exit(0)
+        }
+
         let nick_max: usize = args.opt_value_from_str(["-n", "--nick-max"])?.unwrap_or(11);
         let buffer_max: usize = args
             .opt_value_from_str(["-b", "--buffer-max"])?
             .unwrap_or(100);
 
         let debug = args.contains(["-d", "--debug"]);
+        let transcribe = args.contains(["-t", "--transcribe"]);
 
         let mut channels = args.free()?;
-
-        let channel = if !debug {
-            match channels.len() {
-                0 => {
-                    eprintln!("ERROR: a channel must be provded");
-                    std::process::exit(1);
-                }
-                1 => channels.remove(0),
-                _ => {
-                    eprintln!("ERROR: only a single channel can be provded");
-                    std::process::exit(1);
-                }
+        let channel = match channels.len() {
+            _ if debug => "#testing".to_string(),
+            1 => channels.remove(0),
+            0 => {
+                eprintln!("ERROR: a channel must be provded");
+                std::process::exit(1);
             }
-        } else {
-            "#testing".to_string()
+            _ => {
+                eprintln!("ERROR: only a single channel can be provded");
+                std::process::exit(1);
+            }
         };
+
+        // this'll format/correct the channel for us
+        let channel = twitchchat::commands::Channel::new(&channel).to_string();
 
         Ok(Self {
             nick_max,
             buffer_max,
             channel,
             debug,
+            transcribe,
         })
     }
 }

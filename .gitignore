@@ -2,3 +2,5 @@
 **/*.rs.bk
 *.html
 .vscode/*
+*.txt
+*.log

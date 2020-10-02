@@ -5,30 +5,30 @@ use crate::{
     keys::{self, Message},
     twitch,
     window::{UpdateMode, Window},
+    Logger,
 };
 
 use crossterm::event::*;
 use flume as channel;
 
-pub fn main_loop(args: Args) -> anyhow::Result<()> {
+pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
+    logger.transcribe(&format!("*** session start: {}", crate::timestamp()))?;
+
     let mut window = Window::new(args.nick_max, args.buffer_max);
 
-    // TODO timeout logic here
     let conn = connect(args.debug)?;
 
-    let (messages_tx, messages) = channel::bounded(64);
-    let (done_tx, done) = channel::bounded(1);
+    let (sender, messages) = channel::bounded(64);
 
     let _ = std::thread::spawn(move || {
-        let _ = twitch::run_to_completion(args.channel, messages_tx, conn);
-        drop(done_tx)
+        let _ = twitch::run_to_completion(args.channel, sender, conn);
     });
 
     let (events_tx, events_rx) = channel::bounded(32);
 
     let mut waiting_for_key = false;
 
-    'outer: while keep_running(&done) {
+    'outer: while keep_running(&messages) {
         if crossterm::event::poll(std::time::Duration::from_millis(150))? {
             match crossterm::event::read()? {
                 Event::Key(event) => keys::handle(event, &events_tx),
@@ -84,6 +84,12 @@ pub fn main_loop(args: Args) -> anyhow::Result<()> {
         }
 
         for msg in messages.try_iter() {
+            logger.transcribe(&format!(
+                "{} {}: {}",
+                crate::timestamp(),
+                msg.name(),
+                msg.data()
+            ))?;
             window.push(msg);
             window.update(UpdateMode::Append)?;
         }
@@ -104,6 +110,6 @@ fn connect(debug: bool) -> anyhow::Result<TcpStream> {
     Ok(conn)
 }
 
-fn keep_running(ch: &channel::Receiver<()>) -> bool {
+fn keep_running<T>(ch: &channel::Receiver<T>) -> bool {
     matches!(ch.try_recv(), Err(channel::TryRecvError::Empty))
 }
