@@ -11,7 +11,7 @@ a simple program to display twitch chat in your terminal
 > readchat some_channel
 
 ```
-readchat 0.3.1
+readchat 0.3.4
 
 description:
     simply read-only client for a single twitch channel's chat
