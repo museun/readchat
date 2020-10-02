@@ -59,6 +59,9 @@ pub fn main_loop(args: Args) -> anyhow::Result<()> {
                     continue 'outer;
                 }
 
+                Message::NameColumnGrow => window.grow_nick_column()?,
+                Message::NameColumnShrink => window.shrink_nick_column()?,
+
                 _ => {}
             }
         }

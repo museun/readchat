@@ -10,30 +10,29 @@ macro_rules! key {
     ($code:ident) => { KeyEvent { code: KeyCode::$code, modifiers: KeyModifiers::NONE } };
 }
 
-// TODO add keybindings
+fn is_mark(ch: char, mod_: KeyModifiers) -> bool {
+    (matches!(ch, 'a'..='z' | '0'..='9') && matches!(mod_, KeyModifiers::NONE))
+        || (matches!(ch, 'A'..='Z') && matches!(mod_, KeyModifiers::SHIFT))
+}
+
 pub fn handle(event: KeyEvent, events: &Sender<Message>) {
+    macro_rules! send {
+        ($ev:tt) => {{
+            let _ = events.send(Message::$ev);
+        }};
+    }
+
     match event {
-        key!(ctrl 'c') => {
-            let _ = events.send(Message::Quit);
-        }
-        key!(ctrl 'r') => {
-            let _ = events.send(Message::Redraw);
-        }
-        key!(ctrl 'd') => {
-            let _ = events.send(Message::Delete);
-        }
+        key!(ctrl 'c') => send!(Quit),
+        key!(ctrl 'r') => send!(Redraw),
+        key!(ctrl 'd') => send!(Delete),
+        key!(shift '<') => send!(NameColumnShrink),
+        key!(shift '>') => send!(NameColumnGrow),
 
         KeyEvent {
             code: KeyCode::Char(ch),
-            modifiers: KeyModifiers::NONE,
-        } if matches!(ch,  'a'..='z' | '0'..='9') => {
-            let _ = events.send(Message::Char(ch));
-        }
-
-        KeyEvent {
-            code: KeyCode::Char(ch),
-            modifiers: KeyModifiers::SHIFT,
-        } if matches!(ch, 'A'..='Z') => {
+            modifiers,
+        } if is_mark(ch, modifiers) => {
             let _ = events.send(Message::Char(ch));
         }
 
@@ -47,4 +46,6 @@ pub enum Message {
     Redraw,
     Delete,
     Char(char),
+    NameColumnGrow,
+    NameColumnShrink,
 }

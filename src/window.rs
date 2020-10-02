@@ -83,6 +83,26 @@ impl Window {
         self.update(UpdateMode::Redraw)
     }
 
+    pub(crate) fn grow_nick_column(&mut self) -> anyhow::Result<()> {
+        if self.left == 30 {
+            return Ok(());
+        }
+
+        self.left += 1;
+        self.pad = " ".repeat(self.left);
+        self.update(UpdateMode::Redraw)
+    }
+
+    pub(crate) fn shrink_nick_column(&mut self) -> anyhow::Result<()> {
+        if self.left == 5 {
+            return Ok(());
+        }
+
+        self.left -= 1;
+        self.pad = " ".repeat(self.left);
+        self.update(UpdateMode::Redraw)
+    }
+
     fn state(&self, width: u16) -> State<'_> {
         State {
             prefix: None,

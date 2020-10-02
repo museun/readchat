@@ -36,11 +36,13 @@ arguments:
 
 ## keybinds:
 
-| key      | action         |
-| -------- | -------------- |
-| `ctrl-c` | quit           |
-| `ctrl-r` | force a redraw |
-| `ctrl-d` | delete a line  |
+| key      | action             |
+| -------- | ------------------ |
+| `ctrl-c` | quit               |
+| `ctrl-r` | force a redraw     |
+| `ctrl-d` | delete a line      |
+| `<`      | shrink name column |
+| `>`      | grow name column   |
 
 ---
 
