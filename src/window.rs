@@ -117,14 +117,14 @@ impl Window {
             Ok(())
         }
 
-        let (width, _h) = terminal::size()?;
+        let (width, height) = terminal::size()?;
         let mut stdout = std::io::stdout();
 
         match update {
             UpdateMode::Redraw if self.queue.is_empty() => return Ok(()),
             UpdateMode::Redraw => {
                 crossterm::execute!(stdout, Clear(ClearType::All))?;
-                for msg in self.queue.iter() {
+                for msg in self.queue.iter().rev().take(height as _).rev() {
                     print_message(&mut stdout, msg, self.left, width as _, &self.pad)?;
                 }
             }
