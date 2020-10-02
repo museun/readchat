@@ -28,7 +28,7 @@ pub fn main_loop(args: Args) -> anyhow::Result<()> {
     let mut window = Window::new(args.nick_max, args.buffer_max);
 
     let conn = if args.debug {
-        let addr = crate::testing::make_interesting_chat(3)?;
+        let addr = crate::testing::make_interesting_chat(crate::testing::TestingOpts::load())?;
         std::net::TcpStream::connect(addr)?
     } else {
         std::net::TcpStream::connect(twitchchat::TWITCH_IRC_ADDRESS)?
