@@ -1,8 +1,9 @@
-use std::collections::HashSet;
-use std::io::{BufRead as _, BufReader, Write as _};
-use std::net::TcpListener;
-use std::net::TcpStream;
-use std::time::Duration;
+use std::{
+    collections::HashSet,
+    io::{BufRead as _, BufReader, Write as _},
+    net::{TcpListener, TcpStream},
+    time::Duration,
+};
 
 use twitchchat::twitch::color::RGB;
 

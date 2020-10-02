@@ -1,14 +1,13 @@
 use super::{partition, queue::Queue, truncate};
 
-use std::io::Write;
-
-use twitchchat::{messages::Privmsg, twitch::color::RGB};
+use std::io::Write as _;
 
 use crossterm::{
     cursor::*,
     style::*,
     terminal::{self, *},
 };
+use twitchchat::{messages::Privmsg, twitch::color::RGB};
 
 pub enum UpdateMode {
     Redraw,
