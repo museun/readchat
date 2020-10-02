@@ -33,7 +33,11 @@ fn wait_for_join(mut io: &TcpStream) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn garbage_out(mut io: &TcpStream, chatters: &[Chatter], opts: &TestingOpts) -> anyhow::Result<()> {
+fn garbage_out(
+    io: &mut impl std::io::Write,
+    chatters: &[Chatter],
+    opts: &TestingOpts,
+) -> anyhow::Result<()> {
     let range = opts.duration.0 as u64..opts.duration.1 as u64;
     while let Some(chatter) = chatters.choose() {
         write!(
@@ -55,7 +59,7 @@ fn feed_chat(listener: TcpListener, chatters: Vec<Chatter>, opts: TestingOpts) {
             continue;
         }
 
-        if let Err(..) = garbage_out(&socket, &chatters, &opts) {
+        if let Err(..) = garbage_out(&mut &socket, &chatters, &opts) {
             continue;
         }
     }
@@ -187,74 +191,12 @@ const ANIMALS: &[&str] = &[
     "whale", "wolf", "wombat", "worm", "yak", "zebra",
 ];
 
+#[rustfmt::skip]
 static IPSUM: &[&str] = &[
-    "Lorem",
-    "ipsum",
-    "dolor",
-    "sit",
-    "amet",
-    "consectetur",
-    "adipiscing",
-    "elit",
-    "sed",
-    "do",
-    "eiusmod",
-    "tempor",
-    "incididunt",
-    "ut",
-    "labore",
-    "et",
-    "dolore",
-    "magna",
-    "aliqua",
-    "Ut",
-    "enim",
-    "ad",
-    "minim",
-    "veniam",
-    "quis",
-    "nostrud",
-    "exercitation",
-    "ullamco",
-    "laboris",
-    "nisi",
-    "ut",
-    "aliquip",
-    "ex",
-    "ea",
-    "commodo",
-    "consequat",
-    "Duis",
-    "aute",
-    "irure",
-    "dolor",
-    "in",
-    "reprehenderit",
-    "in",
-    "voluptate",
-    "velit",
-    "esse",
-    "cillum",
-    "dolore",
-    "eu",
-    "fugiat",
-    "nulla",
-    "pariatur",
-    "Excepteur",
-    "sint",
-    "occaecat",
-    "cupidatat",
-    "non",
-    "proident",
-    "sunt",
-    "in",
-    "culpa",
-    "qui",
-    "officia",
-    "deserunt",
-    "mollit",
-    "anim",
-    "id",
-    "est",
-    "laborum",
+    "Lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit", "sed", "do", "eiusmod", "tempor",
+    "incididunt", "ut", "labore", "et", "dolore", "magna", "aliqua", "Ut", "enim", "ad", "minim", "veniam",
+    "quis", "nostrud", "exercitation", "ullamco", "laboris", "nisi", "ut", "aliquip", "ex", "ea", "commodo", "consequat",
+    "Duis", "aute", "irure", "dolor", "in", "reprehenderit", "in", "voluptate", "velit", "esse", "cillum", "dolore",
+    "eu", "fugiat", "nulla", "pariatur", "Excepteur", "sint", "occaecat", "cupidatat", "non", "proident", "sunt", "in",
+    "culpa", "qui", "officia", "deserunt", "mollit", "anim", "id", "est", "laboru" 
 ];
