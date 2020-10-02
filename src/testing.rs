@@ -38,7 +38,7 @@ fn garbage_out(
     chatters: &[Chatter],
     opts: &TestingOpts,
 ) -> anyhow::Result<()> {
-    let range = opts.duration.0 as u64..opts.duration.1 as u64;
+    let range = opts.duration_lower..opts.duration_upper;
     while let Some(chatter) = chatters.choose() {
         write!(
             io,
@@ -68,26 +68,24 @@ fn feed_chat(listener: TcpListener, chatters: Vec<Chatter>, opts: TestingOpts) {
 #[derive(Debug, Copy, Clone)]
 pub struct TestingOpts {
     pub unique_chatters: usize,
-    pub duration: (usize, usize),
-    pub length: (usize, usize),
+    pub duration_lower: u64,
+    pub duration_upper: u64,
+    pub length_lower: usize,
+    pub length_upper: usize,
 }
 
 impl TestingOpts {
     pub fn load() -> Self {
-        fn get(key: &str) -> Option<usize> {
+        fn get<T: std::str::FromStr>(key: &str) -> Option<T> {
             std::env::var(key).ok().and_then(|p| p.parse().ok())
         }
 
         Self {
             unique_chatters: get("READCHAT_UNIQUE").unwrap_or(5),
-            duration: (
-                get("READCHAT_DURATION_LOWER").unwrap_or(150),
-                get("READCHAT_DURATION_UPPER").unwrap_or(1500),
-            ),
-            length: (
-                get("READCHAT_LENGTH_LOWER").unwrap_or(5),
-                get("READCHAT_LENGTH_UPPER").unwrap_or(300),
-            ),
+            duration_lower: get("READCHAT_DURATION_LOWER").unwrap_or(150),
+            duration_upper: get("READCHAT_DURATION_UPPER").unwrap_or(1500),
+            length_lower: get("READCHAT_LENGTH_LOWER").unwrap_or(5),
+            length_upper: get("READCHAT_LENGTH_UPPER").unwrap_or(300),
         }
     }
 }
@@ -142,7 +140,7 @@ impl Chatter {
     }
 
     fn speak(&self, opts: &TestingOpts) -> String {
-        let mut len = fastrand::usize(opts.length.0..opts.length.1);
+        let mut len = fastrand::usize(opts.length_lower..opts.length_upper);
         let mut data = String::new();
 
         let mut iter = IPSUM.iter().cycle();
