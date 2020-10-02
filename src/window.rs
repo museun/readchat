@@ -90,7 +90,7 @@ impl Window {
 
         self.left += 1;
         self.pad = " ".repeat(self.left);
-        self.update(UpdateMode::Redraw)
+        Ok(())
     }
 
     pub(crate) fn shrink_nick_column(&mut self) -> anyhow::Result<()> {
@@ -100,7 +100,7 @@ impl Window {
 
         self.left -= 1;
         self.pad = " ".repeat(self.left);
-        self.update(UpdateMode::Redraw)
+        Ok(())
     }
 
     fn state(&self, width: u16) -> State<'_> {

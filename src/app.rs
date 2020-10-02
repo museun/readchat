@@ -59,8 +59,19 @@ pub fn main_loop(args: Args) -> anyhow::Result<()> {
                     continue 'outer;
                 }
 
-                Message::NameColumnGrow => window.grow_nick_column()?,
-                Message::NameColumnShrink => window.shrink_nick_column()?,
+                e @ Message::NameColumnGrow | e @ Message::NameColumnShrink => {
+                    if matches!(e, Message::NameColumnGrow) {
+                        window.grow_nick_column()?;
+                    } else {
+                        window.shrink_nick_column()?;
+                    }
+
+                    if waiting_for_key {
+                        window.update(UpdateMode::MarkAll)?;
+                    } else {
+                        window.update(UpdateMode::Redraw)?;
+                    }
+                }
 
                 _ => {}
             }
