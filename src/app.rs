@@ -15,17 +15,13 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
     logger.transcribe(&format!("*** session start: {}", crate::timestamp()))?;
 
     let mut window = Window::new(args.nick_max, args.buffer_max);
-
     let conn = connect(args.debug)?;
-
     let (sender, messages) = channel::bounded(64);
 
     let _ = std::thread::spawn(move || {
         let _ = twitch::run_to_completion(args.channel, sender, conn);
     });
-
     let (events_tx, events_rx) = channel::bounded(32);
-
     let mut waiting_for_key = false;
 
     'outer: while keep_running(&messages) {
@@ -111,5 +107,5 @@ fn connect(debug: bool) -> anyhow::Result<TcpStream> {
 }
 
 fn keep_running<T>(ch: &channel::Receiver<T>) -> bool {
-    matches!(ch.try_recv(), Err(channel::TryRecvError::Empty))
+    !matches!(ch.try_recv(), Err(channel::TryRecvError::Disconnected))
 }

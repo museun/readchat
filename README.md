@@ -11,7 +11,7 @@ a simple program to display twitch chat in your terminal
 > readchat some_channel
 
 ```
-readchat 0.3.4
+readchat 0.3.5
 
 description:
     simply read-only client for a single twitch channel's chat
@@ -23,6 +23,8 @@ flags:
     -h, --help             prints this message
     -v, --version          prints the version
     -d, --debug            use simulated debug stream instead
+    -t, --transcribe       log this channel to a file (when not in debug mode)
+    -l, --log-dir          print the log directory and exit
 
 optional flags:
     -n, --nick-max <int>   the max width before truncation of nicknames
