@@ -32,42 +32,70 @@ fn wait_for_join(mut io: &TcpStream) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn garbage_out(mut io: &TcpStream, chatters: &[Chatter]) -> anyhow::Result<()> {
+fn garbage_out(mut io: &TcpStream, chatters: &[Chatter], opts: &TestingOpts) -> anyhow::Result<()> {
+    let range = opts.duration.0 as u64..opts.duration.1 as u64;
     while let Some(chatter) = chatters.choose() {
         write!(
             io,
             "@color={color} :{name}!{name}@{name} PRIVMSG #testing :{msg}\r\n",
             color = chatter.color,
             name = chatter.name,
-            msg = chatter.speak()
+            msg = chatter.speak(opts)
         )?;
 
-        std::thread::sleep(Duration::from_millis(fastrand::u64(150..1500)));
+        std::thread::sleep(Duration::from_millis(fastrand::u64(range)));
     }
     Ok(())
 }
 
-fn feed_chat(listener: TcpListener, chatters: Vec<Chatter>) {
+fn feed_chat(listener: TcpListener, chatters: Vec<Chatter>, opts: TestingOpts) {
     for socket in listener.incoming().flatten() {
         if let Err(..) = wait_for_join(&socket) {
             continue;
         }
 
-        if let Err(..) = garbage_out(&socket, &chatters) {
+        if let Err(..) = garbage_out(&socket, &chatters, &opts) {
             continue;
         }
     }
 }
 
-pub fn make_interesting_chat(unique: usize) -> anyhow::Result<std::net::SocketAddr> {
-    let mut chatters = Vec::with_capacity(unique);
+#[derive(Debug, Copy, Clone)]
+pub struct TestingOpts {
+    pub unique_chatters: usize,
+    pub duration: (usize, usize),
+    pub length: (usize, usize),
+}
+
+impl TestingOpts {
+    pub fn load() -> Self {
+        fn get(key: &str) -> Option<usize> {
+            std::env::var(key).ok().and_then(|p| p.parse().ok())
+        }
+
+        Self {
+            unique_chatters: get("READCHAT_UNIQUE").unwrap_or(5),
+            duration: (
+                get("READCHAT_DURATION_LOWER").unwrap_or(150),
+                get("READCHAT_DURATION_UPPER").unwrap_or(1500),
+            ),
+            length: (
+                get("READCHAT_LENGTH_LOWER").unwrap_or(5),
+                get("READCHAT_LENGTH_UPPER").unwrap_or(300),
+            ),
+        }
+    }
+}
+
+pub fn make_interesting_chat(opts: TestingOpts) -> anyhow::Result<std::net::SocketAddr> {
+    let mut chatters = Vec::with_capacity(opts.unique_chatters);
     let mut seen = HashSet::new();
     for chatter in std::iter::repeat_with(Chatter::new) {
         if seen.insert(chatter.name.clone()) {
             chatters.push(chatter);
         }
 
-        if chatters.len() == unique {
+        if chatters.len() == opts.unique_chatters {
             break;
         }
     }
@@ -75,7 +103,7 @@ pub fn make_interesting_chat(unique: usize) -> anyhow::Result<std::net::SocketAd
     let listener = TcpListener::bind("localhost:0")?;
     let addr = listener.local_addr()?;
 
-    let _ = std::thread::spawn(move || feed_chat(listener, chatters));
+    let _ = std::thread::spawn(move || feed_chat(listener, chatters, opts));
 
     Ok(addr)
 }
@@ -108,8 +136,8 @@ impl Chatter {
         Self { name, color }
     }
 
-    fn speak(&self) -> String {
-        let mut len = fastrand::usize(5..300);
+    fn speak(&self, opts: &TestingOpts) -> String {
+        let mut len = fastrand::usize(opts.length.0..opts.length.1);
         let mut data = String::new();
 
         let mut iter = IPSUM.iter().cycle();

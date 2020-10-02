@@ -1,3 +1,4 @@
+use crossbeam_channel::Sender;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[rustfmt::skip]
@@ -10,14 +11,40 @@ macro_rules! key {
 }
 
 // TODO add keybindings
-pub fn handle(event: KeyEvent) -> LoopState {
+pub fn handle(event: KeyEvent, events: &Sender<Message>) {
     match event {
-        key!(ctrl 'c') => LoopState::Break,
-        _ => LoopState::Continue,
+        key!(ctrl 'c') => {
+            let _ = events.send(Message::Quit);
+        }
+        key!(ctrl 'r') => {
+            let _ = events.send(Message::Redraw);
+        }
+        key!(ctrl 'd') => {
+            let _ = events.send(Message::Delete);
+        }
+
+        KeyEvent {
+            code: KeyCode::Char(ch),
+            modifiers: KeyModifiers::NONE,
+        } if matches!(ch,  'a'..='z' | '0'..='9') => {
+            let _ = events.send(Message::Char(ch));
+        }
+
+        KeyEvent {
+            code: KeyCode::Char(ch),
+            modifiers: KeyModifiers::SHIFT,
+        } if matches!(ch, 'A'..='Z') => {
+            let _ = events.send(Message::Char(ch));
+        }
+
+        _ => {}
     }
 }
 
-pub enum LoopState {
-    Continue,
-    Break,
+#[derive(Debug)]
+pub enum Message {
+    Quit,
+    Redraw,
+    Delete,
+    Char(char),
 }
