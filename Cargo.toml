@@ -1,10 +1,9 @@
 [package]
 name = "readchat"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["museun <museun@outlook.com>"]
 edition = "2018"
 license = "Unlicense"
-build = "build.rs"
 
 [dependencies]
 anyhow               = "1.0.32"

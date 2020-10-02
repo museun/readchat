@@ -1,10 +1,4 @@
-const HEADER: &str = concat!(
-    "readchat ",
-    env!("CARGO_PKG_VERSION"),
-    " (",
-    env!("GIT_REVISION"),
-    ")"
-);
+const HEADER: &str = concat!("readchat ", env!("CARGO_PKG_VERSION"),);
 
 const HELP_MESSAGE: &str = "
 description:
@@ -16,7 +10,7 @@ usage:
 flags:
     -h, --help             prints this message
     -v, --version          prints the version
-    -d, --debug            use a debug stream source instead of actually connecting
+    -d, --debug            use simulated debug stream instead
 
 optional flags:
     -n, --nick-max <int>   the max width before truncation of nicknames
