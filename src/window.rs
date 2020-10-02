@@ -64,7 +64,9 @@ impl Window {
 
                 for msg in iter {
                     let mut state = self.state(width);
-                    state.prefix.replace(*ch.next().unwrap());
+                    // this'll stop printing deletion marks if we've reached the
+                    // end of our alphabet
+                    state.prefix = ch.next().copied();
                     print_message(&mut stdout, msg, state)?;
                 }
             }
