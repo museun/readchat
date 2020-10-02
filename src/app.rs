@@ -60,16 +60,18 @@ pub fn main_loop(args: Args) -> anyhow::Result<()> {
                 }
 
                 e @ Message::NameColumnGrow | e @ Message::NameColumnShrink => {
-                    if matches!(e, Message::NameColumnGrow) {
-                        window.grow_nick_column()?;
+                    let mode = if waiting_for_key {
+                        UpdateMode::MarkAll
                     } else {
-                        window.shrink_nick_column()?;
-                    }
+                        UpdateMode::Redraw
+                    };
 
-                    if waiting_for_key {
-                        window.update(UpdateMode::MarkAll)?;
+                    if if matches!(e, Message::NameColumnGrow) {
+                        window.grow_nick_column()?
                     } else {
-                        window.update(UpdateMode::Redraw)?;
+                        window.shrink_nick_column()?
+                    } {
+                        window.update(mode)?;
                     }
                 }
 

@@ -82,24 +82,24 @@ impl Window {
         self.update(UpdateMode::Redraw)
     }
 
-    pub(crate) fn grow_nick_column(&mut self) -> anyhow::Result<()> {
-        if self.left == 30 {
-            return Ok(());
+    pub(crate) fn grow_nick_column(&mut self) -> anyhow::Result<bool> {
+        if self.left == 25 {
+            return Ok(false);
         }
 
         self.left += 1;
         self.pad = " ".repeat(self.left);
-        Ok(())
+        Ok(true)
     }
 
-    pub(crate) fn shrink_nick_column(&mut self) -> anyhow::Result<()> {
+    pub(crate) fn shrink_nick_column(&mut self) -> anyhow::Result<bool> {
         if self.left == 5 {
-            return Ok(());
+            return Ok(false);
         }
 
         self.left -= 1;
         self.pad = " ".repeat(self.left);
-        Ok(())
+        Ok(true)
     }
 
     fn state(&self, width: u16) -> State<'_> {
@@ -108,6 +108,7 @@ impl Window {
             left: self.left,
             width: width as _,
             pad: &self.pad,
+            indent: "",
         }
     }
 }
@@ -124,6 +125,7 @@ struct State<'a> {
     left: usize,
     width: usize,
     pad: &'a str,
+    indent: &'a str,
 }
 
 fn print_message(
@@ -139,7 +141,10 @@ fn print_message(
     let name = truncate::truncate_or_pad(msg.name(), state.left - p);
     let name = style(name).with(color);
 
-    let partition = partition::partition(msg.data(), state.width - p - state.left - 1);
+    let partition = partition::partition(
+        msg.data(),
+        state.width - p - state.left - 1 - state.indent.len(),
+    );
 
     for (i, part) in partition.into_iter().enumerate() {
         let first = i == 0;
@@ -155,14 +160,18 @@ fn print_message(
                     Print("] ")
                 )?;
             } else {
-                crossterm::queue!(stdout, Print("    "),)?;
+                crossterm::queue!(stdout, Print("    "))?;
             }
         }
 
         if first {
             crossterm::queue!(stdout, Print(&name))?;
         } else {
-            crossterm::queue!(stdout, Print(&state.pad[..state.pad.len() - p]))?;
+            crossterm::queue!(
+                stdout,
+                Print(&state.pad[..state.pad.len() - p]),
+                Print(state.indent)
+            )?;
         }
         crossterm::queue!(stdout, Print(" "), Print(part))?;
     }
