@@ -79,10 +79,23 @@ pub(super) fn run_to_completion(
 
     // and then run the main loop
     while let Some(Ok(msg)) = decoder.next() {
-        if let Commands::Privmsg(msg) = twitchchat::messages::Commands::from_irc(msg)? {
-            if messages.send(msg).is_err() {
-                break;
+        match twitchchat::messages::Commands::from_irc(msg)? {
+            Commands::Ping(msg) => {
+                if encoder
+                    .encode(twitchchat::commands::pong(msg.token()))
+                    .is_err()
+                {
+                    break;
+                }
             }
+            Commands::Privmsg(msg) => {
+                if messages.send(msg).is_err() {
+                    break;
+                }
+            }
+
+            // TODO handle Reconnect
+            _ => {}
         }
 
         // Commands::ClearChat(_) => {}
