@@ -36,13 +36,31 @@ arguments:
 
 ## keybinds:
 
-| key      | action             |
-| -------- | ------------------ |
-| `ctrl-c` | quit               |
-| `ctrl-r` | force a redraw     |
-| `ctrl-d` | delete a line      |
-| `<`      | shrink name column |
-| `>`      | grow name column   |
+| key      | action             | remarks                                           |
+| -------- | ------------------ | ------------------------------------------------- |
+| `ctrl-c` | quit               | ---                                               |
+| `ctrl-r` | force a redraw     | ---                                               |
+| `ctrl-d` | delete a line      | press `ctrl-d` to exit this mode without deleting |
+| `<`      | shrink name column | minimum is **5** columns                          |
+| `>`      | grow name column   | maximum is **30** columns                         |
+
+## deleting:
+
+when you press `ctrl-d` the view will change to:
+
+![delete-view](./assets/delete-view.png)
+
+press the cooresponding letter on the bracket (the left most column) to delete that message. such as `C`.
+
+if you don't want to delete a message, just press `ctrl-d` again to exit this view.
+
+### design decisions:
+
+the 'marks' are generated in reverse order because the most commonly deleted messages are new ones. so.. `A` then backward to `Z`.
+
+if you have more than `26` lines, the total available marks are: `A-Z0-9a-z`.
+
+**NOTE** the numerals are in the middle so its easier to see the separation
 
 ---
 
