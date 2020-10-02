@@ -67,6 +67,14 @@ impl TwitchChat {
             let msg = twitchchat::messages::Commands::from_irc(msg?)?;
             if let Commands::Join(msg) = msg {
                 if msg.channel() == &*channel && msg.name() == "justinfan1234" {
+                    replace_line(
+                        &mut out,
+                        format!(
+                            "{}{}",
+                            style("joined ").with(Color::Cyan),
+                            style(&channel).with(Color::Green),
+                        ),
+                    )?;
                     break;
                 }
             }
