@@ -37,7 +37,7 @@ dependencies = [
  "crossterm_winapi 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.78 (registry+https://github.com/rust-lang/crates.io-index)",
- "mio 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mio 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "signal-hook 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -100,7 +100,7 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "libc 0.2.78 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -186,7 +186,7 @@ version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "libc 0.2.78 (registry+https://github.com/rust-lang/crates.io-index)",
- "mio 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mio 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "signal-hook-registry 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -272,7 +272,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum libc 0.2.78 (registry+https://github.com/rust-lang/crates.io-index)" = "aa7087f49d294270db4e1928fc110c976cd4b9e5a16348e0a1df09afa99e6c98"
 "checksum lock_api 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)" = "28247cc5a5be2f05fbcd76dd0cf2c7d3b5400cb978a28042abcd4fa0b3f8261c"
 "checksum log 0.4.11 (registry+https://github.com/rust-lang/crates.io-index)" = "4fabed175da42fed1fa0746b0ea71f412aa9d35e76e95e59b192c64b9dc2bf8b"
-"checksum mio 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)" = "d1bb17be6a300845baad6dc2062a31de575e9148696df52f040aea6398627350"
+"checksum mio 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)" = "6d5fc35678fa91ff960494e4bd72a0e1f8e72e035460887a2005de51915993cd"
 "checksum miow 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)" = "07b88fb9795d4d36d62a012dfbf49a8f5cf12751f36d31a9dbe66d528e58979e"
 "checksum ntapi 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)" = "7a31937dea023539c72ddae0e3571deadc1414b300483fa7aaec176168cfa9d2"
 "checksum parking_lot 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)" = "a4893845fa2ca272e647da5d0e46660a314ead9c2fdd9a883aabc32e481a8733"
