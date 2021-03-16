@@ -1,4 +1,6 @@
-const HEADER: &str = concat!("readchat ", env!("CARGO_PKG_VERSION"),);
+use twitchchat::commands::Channel;
+
+const HEADER: &str = concat!("readchat ", env!("CARGO_PKG_VERSION"));
 
 const HELP_MESSAGE: &str = "
 description:
@@ -34,20 +36,15 @@ impl Args {
     pub fn parse() -> anyhow::Result<Self> {
         let mut args = pico_args::Arguments::from_env();
         if args.contains(["-h", "--help"]) {
-            println!("{}", HEADER);
-            println!("{}", HELP_MESSAGE);
-            std::process::exit(0);
+            exit_normally(&[&HEADER, &HELP_MESSAGE]);
         }
 
         if args.contains(["-v", "--version"]) {
-            println!("{}", HEADER);
-            std::process::exit(0);
+            exit_normally(&[&HEADER]);
         }
 
         if args.contains(["-l", "--log-dir"]) {
-            let dir = crate::Logger::get_dir()?;
-            println!("{}", dir.display());
-            std::process::exit(0)
+            exit_normally(&[&crate::Logger::get_dir()?.display()]);
         }
 
         let nick_max: usize = args.opt_value_from_str(["-n", "--nick-max"])?.unwrap_or(11);
@@ -58,22 +55,19 @@ impl Args {
         let debug = args.contains(["-d", "--debug"]);
         let transcribe = args.contains(["-t", "--transcribe"]);
 
-        let mut channels = args.free()?;
+        let mut channels = args.finish();
         let channel = match channels.len() {
             _ if debug => "#testing".to_string(),
-            1 => channels.remove(0),
-            0 => {
-                eprintln!("ERROR: a channel must be provded");
-                std::process::exit(1);
-            }
-            _ => {
-                eprintln!("ERROR: only a single channel can be provded");
-                std::process::exit(1);
-            }
+            1 => channels.remove(0).into_string().map_err(|s| {
+                // TODO we shouldn't really care if its utf-8 or not. probably
+                anyhow::anyhow!("string contains invalid utf-8, '{}'", s.to_string_lossy())
+            })?,
+            0 => exit_with_error("ERROR: a channel must be provded"),
+            _ => exit_with_error("ERROR: only a single channel can be provded"),
         };
 
         // this'll format/correct the channel for us
-        let channel = twitchchat::commands::Channel::new(&channel).to_string();
+        let channel = Channel::new(&channel).to_string();
 
         Ok(Self {
             nick_max,
@@ -83,4 +77,16 @@ impl Args {
             transcribe,
         })
     }
+}
+
+fn exit_normally(msgs: &[&dyn ToString]) -> ! {
+    for msg in msgs {
+        println!("{}", msg.to_string());
+    }
+    std::process::exit(0)
+}
+
+fn exit_with_error(msg: &str) -> ! {
+    eprintln!("{}", msg);
+    std::process::exit(1);
 }
