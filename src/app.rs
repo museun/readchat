@@ -22,7 +22,7 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
         let _ = twitch::run_to_completion(args.channel, sender, conn);
     });
     let (events_tx, events_rx) = channel::bounded(32);
-    let mut waiting_for_key = false;
+    let mut waiting = false;
 
     'outer: while keep_running(&messages) {
         if crossterm::event::poll(std::time::Duration::from_millis(150))? {
@@ -39,35 +39,34 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
 
                 Message::Redraw => window.update(UpdateMode::Redraw)?,
 
-                Message::Delete if !waiting_for_key => {
-                    waiting_for_key = true;
+                Message::Delete if !waiting => {
+                    waiting = true;
                     window.update(UpdateMode::MarkAll)?;
                 }
 
-                Message::Delete if waiting_for_key => {
-                    waiting_for_key = false;
+                Message::Delete if waiting => {
+                    waiting = false;
                     window.update(UpdateMode::Redraw)?
                 }
 
-                Message::Char(ch) if waiting_for_key => {
+                Message::Char(ch) if waiting => {
                     window.delete(ch)?;
-                    waiting_for_key = false;
+                    waiting = false;
                     continue 'outer;
                 }
 
-                e @ Message::NameColumnGrow | e @ Message::NameColumnShrink => {
-                    let mode = if waiting_for_key {
-                        UpdateMode::MarkAll
-                    } else {
-                        UpdateMode::Redraw
-                    };
+                Message::NameColumnGrow | Message::NameColumnShrink => {
+                    use UpdateMode as U;
+                    const COLUMN_ACTION: [fn(&mut Window) -> bool; 2] = [
+                        Window::grow_nick_column, //
+                        Window::shrink_nick_column,
+                    ];
 
-                    if if matches!(e, Message::NameColumnGrow) {
-                        window.grow_nick_column()?
-                    } else {
-                        window.shrink_nick_column()?
-                    } {
-                        window.update(mode)?;
+                    // pick the current 'mode'
+                    let choice: usize = matches!(event, Message::NameColumnGrow) as u8 as _;
+                    // should we update the window?
+                    if COLUMN_ACTION[choice](&mut window) {
+                        window.update(if waiting { U::MarkAll } else { U::Redraw })?;
                     }
                 }
 
@@ -75,7 +74,7 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
             }
         }
 
-        if waiting_for_key {
+        if waiting {
             continue 'outer;
         }
 

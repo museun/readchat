@@ -9,6 +9,11 @@ use crossterm::{
 };
 use twitchchat::{messages::Privmsg, twitch::color::RGB};
 
+// TODO make these configurable
+const MAX_COLUMN_WIDTH: usize = 25;
+// TODO make these configurable
+const MIN_COLUMN_WIDTH: usize = 5;
+
 pub enum UpdateMode {
     Redraw,
     Append,
@@ -84,24 +89,26 @@ impl Window {
         self.update(UpdateMode::Redraw)
     }
 
-    pub(crate) fn grow_nick_column(&mut self) -> anyhow::Result<bool> {
-        if self.left == 25 {
-            return Ok(false);
+    pub(crate) fn grow_nick_column(&mut self) -> bool {
+        if self.left == MAX_COLUMN_WIDTH {
+            return false;
         }
 
         self.left += 1;
+        // TODO this could just truncate or append spaces instead of using an entirely new allocation
         self.pad = " ".repeat(self.left);
-        Ok(true)
+        true
     }
 
-    pub(crate) fn shrink_nick_column(&mut self) -> anyhow::Result<bool> {
-        if self.left == 5 {
-            return Ok(false);
+    pub(crate) fn shrink_nick_column(&mut self) -> bool {
+        if self.left == MIN_COLUMN_WIDTH {
+            return false;
         }
 
         self.left -= 1;
+        // TODO this could just truncate or append spaces instead of using an entirely new allocation
         self.pad = " ".repeat(self.left);
-        Ok(true)
+        true
     }
 
     fn state(&self, width: u16) -> State<'_> {
@@ -116,6 +123,7 @@ impl Window {
 }
 
 #[rustfmt::skip]
+// XXX: we cannot use a binary search on this because 'a' < 'A'
 const ALPHA: &[char] = &[
     // uppercase first
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O',

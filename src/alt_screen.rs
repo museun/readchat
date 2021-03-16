@@ -3,8 +3,6 @@ use crossterm::{
     terminal::{self, *},
 };
 
-use std::io::Write as _;
-
 pub struct AltScreen;
 
 impl AltScreen {

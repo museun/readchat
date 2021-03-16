@@ -22,6 +22,7 @@ pub fn partition(input: &str, max: usize) -> Vec<String> {
         }
 
         if !temp.is_empty() {
+            // TODO why isn't this an std::mem::take()? why is there a closure being used?
             vec.push(std::mem::replace(&mut temp, new_string()));
             budget = max;
         }
@@ -44,6 +45,7 @@ pub fn partition(input: &str, max: usize) -> Vec<String> {
             };
 
             temp.push_str(left);
+            // TODO why isn't this an std::mem::take()? why is there a closure being used?
             vec.push(std::mem::replace(&mut temp, new_string()));
             budget = max;
 
