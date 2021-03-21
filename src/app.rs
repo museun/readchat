@@ -62,8 +62,8 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
                 {
                     use UpdateMode as U;
                     const COLUMN_ACTION: [fn(&mut Window) -> bool; 2] = [
-                        Window::grow_nick_column, //
-                        Window::shrink_nick_column,
+                        Window::shrink_nick_column, // left
+                        Window::grow_nick_column,   // right
                     ];
 
                     // pick the current 'mode'
