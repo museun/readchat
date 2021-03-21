@@ -16,12 +16,10 @@ const fn is_mark(ch: char, mod_: KeyModifiers) -> bool {
 }
 
 pub fn handle(event: KeyEvent, events: &Sender<Message>) {
-    macro_rules! send {
-        ($ev:tt) => {{
-            let _ = events.send(Message::$ev);
-        }};
-    }
+    #[rustfmt::skip]
+    macro_rules! send { ($ev:tt) => {{ let _ = events.send(Message::$ev); }}; }
 
+    #[allow(unreachable_patterns)] // somehow this is a false positive
     match event {
         key!(ctrl 'c') => send!(Quit),
         key!(ctrl 'r') => send!(Redraw),
@@ -40,7 +38,7 @@ pub fn handle(event: KeyEvent, events: &Sender<Message>) {
     }
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum Message {
     Quit,
     Redraw,

@@ -77,7 +77,7 @@ pub struct TestingOpts {
 impl TestingOpts {
     pub fn load() -> Self {
         fn get<T: std::str::FromStr>(key: &str) -> Option<T> {
-            std::env::var(key).ok().and_then(|p| p.parse().ok())
+            std::env::var(key).ok()?.parse().ok()
         }
 
         Self {
@@ -122,7 +122,7 @@ impl Chatter {
         let mut name = format!(
             "{}{}",
             ADJECTIVES.choose().unwrap(),
-            ANIMALS.choose().unwrap()
+            ANIMALS.choose().unwrap(),
         );
         name.push_str(
             &std::iter::repeat_with(|| fastrand::u8(b'0'..b'9'))
@@ -196,5 +196,5 @@ static IPSUM: &[&str] = &[
     "quis", "nostrud", "exercitation", "ullamco", "laboris", "nisi", "ut", "aliquip", "ex", "ea", "commodo", "consequat",
     "Duis", "aute", "irure", "dolor", "in", "reprehenderit", "in", "voluptate", "velit", "esse", "cillum", "dolore",
     "eu", "fugiat", "nulla", "pariatur", "Excepteur", "sint", "occaecat", "cupidatat", "non", "proident", "sunt", "in",
-    "culpa", "qui", "officia", "deserunt", "mollit", "anim", "id", "est", "laboru" 
+    "culpa", "qui", "officia", "deserunt", "mollit", "anim", "id", "est", "laboru"
 ];

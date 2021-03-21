@@ -47,7 +47,7 @@ impl Logger {
             .append(true)
             .write(true)
             .create(true)
-            .open(dir.join(format!("{}.log", channel)))
+            .open(dir.join(channel).with_extension("log"))
             .map(|fi| Self {
                 transcribe: Target::File(fi),
             })

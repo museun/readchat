@@ -4,7 +4,7 @@ use crate::{
     args::Args,
     keys::{self, Message},
     twitch,
-    window::{UpdateMode, Window},
+    window::{UpdateMode, ViewMode, Window},
     Logger,
 };
 
@@ -14,60 +14,69 @@ use flume as channel;
 pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
     logger.transcribe(&format!("*** session start: {}", crate::timestamp()))?;
 
-    let mut window = Window::new(args.nick_max, args.buffer_max);
+    let mut window = Window::new(args.nick_max, args.buffer_max, args.min_width);
     let conn = connect(args.debug)?;
     let (sender, messages) = channel::bounded(64);
 
-    let _ = std::thread::spawn(move || {
-        let _ = twitch::run_to_completion(args.channel, sender, conn);
+    let _ = std::thread::spawn({
+        let channel = args.channel.clone();
+        move || {
+            let _ = twitch::run_to_completion(channel, sender, conn);
+        }
     });
     let (events_tx, events_rx) = channel::bounded(32);
-    let mut waiting_for_key = false;
+    let mut waiting = false;
+
+    let mut view_mode = ViewMode::Normal;
 
     'outer: while keep_running(&messages) {
         if crossterm::event::poll(std::time::Duration::from_millis(150))? {
             match crossterm::event::read()? {
                 Event::Key(event) => keys::handle(event, &events_tx),
-                Event::Resize(_, _) => window.update(UpdateMode::Redraw)?,
+                Event::Resize(_, _) => window.update(UpdateMode::Redraw, &mut view_mode, &args)?,
                 _ => {}
             }
         }
 
         for event in events_rx.try_iter() {
-            match event {
-                Message::Quit => break 'outer,
+            let update_mode = if waiting {
+                UpdateMode::MarkAll
+            } else {
+                UpdateMode::Redraw
+            };
 
-                Message::Redraw => window.update(UpdateMode::Redraw)?,
+            match (event, view_mode) {
+                (Message::Quit, ..) => break 'outer,
 
-                Message::Delete if !waiting_for_key => {
-                    waiting_for_key = true;
-                    window.update(UpdateMode::MarkAll)?;
+                (Message::Redraw, ..) => {
+                    window.update(UpdateMode::Redraw, &mut view_mode, &args)?
                 }
 
-                Message::Delete if waiting_for_key => {
-                    waiting_for_key = false;
-                    window.update(UpdateMode::Redraw)?
+                (Message::Delete, ViewMode::Normal) if !waiting => {
+                    waiting = !waiting;
+                    window.update(UpdateMode::MarkAll, &mut view_mode, &args)?;
                 }
 
-                Message::Char(ch) if waiting_for_key => {
-                    window.delete(ch)?;
-                    waiting_for_key = false;
+                (Message::Delete, ViewMode::Normal) if waiting => {
+                    waiting = !waiting;
+                    window.update(UpdateMode::Redraw, &mut view_mode, &args)?
+                }
+
+                (Message::Char(ch), ViewMode::Normal) if waiting => {
+                    window.delete(ch, &mut view_mode, &args)?;
+                    waiting = false;
                     continue 'outer;
                 }
 
-                e @ Message::NameColumnGrow | e @ Message::NameColumnShrink => {
-                    let mode = if waiting_for_key {
-                        UpdateMode::MarkAll
-                    } else {
-                        UpdateMode::Redraw
-                    };
+                (Message::NameColumnGrow, ViewMode::Normal) => {
+                    if Window::grow_nick_column(&mut window) {
+                        window.update(update_mode, &mut view_mode, &args)?;
+                    }
+                }
 
-                    if if matches!(e, Message::NameColumnGrow) {
-                        window.grow_nick_column()?
-                    } else {
-                        window.shrink_nick_column()?
-                    } {
-                        window.update(mode)?;
+                (Message::NameColumnShrink, ViewMode::Normal) => {
+                    if Window::shrink_nick_column(&mut window) {
+                        window.update(update_mode, &mut view_mode, &args)?;
                     }
                 }
 
@@ -75,7 +84,7 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
             }
         }
 
-        if waiting_for_key {
+        if waiting {
             continue 'outer;
         }
 
@@ -87,7 +96,7 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
                 msg.data()
             ))?;
             window.push(msg);
-            window.update(UpdateMode::Append)?;
+            window.update(UpdateMode::Append, &mut view_mode, &args)?;
         }
     }
 
