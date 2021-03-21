@@ -10,10 +10,12 @@ use crossterm::{
 use twitchchat::{messages::Privmsg, twitch::color::RGB};
 use unicode_width::UnicodeWidthStr;
 
-// TODO make these configurable
+// TODO make this configurable
 const MAX_COLUMN_WIDTH: usize = 25;
-// TODO make these configurable
+// TODO make this configurable
 const MIN_COLUMN_WIDTH: usize = 5;
+// TODO make this configurable
+const MIN_WIDTH: usize = 30;
 
 pub enum UpdateMode {
     Redraw,
@@ -47,12 +49,10 @@ impl Window {
         update: UpdateMode,
         view_mode: &mut ViewMode,
     ) -> anyhow::Result<()> {
-        const MIN: usize = 30;
-
         let (width, height) = terminal::size()?;
         let mut stdout = std::io::stdout();
 
-        *view_mode = if (width as usize) < self.min.unwrap_or(MIN) {
+        *view_mode = if (width as usize) < self.min.unwrap_or(MIN_WIDTH) {
             ViewMode::Compact
         } else {
             ViewMode::Normal
@@ -249,7 +249,7 @@ impl ViewMode {
         let partition = partition::partition(msg.data(), state.width);
 
         crossterm::queue!(stdout, Print("\n"), MoveToColumn(0), Print(&name))?;
-        for part in partition.into_iter() {
+        for part in partition {
             crossterm::queue!(stdout, Print("\n"), MoveToColumn(0), Print(part))?;
         }
         crossterm::queue!(stdout, Print("\n"), MoveToColumn(0))?;
