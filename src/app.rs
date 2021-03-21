@@ -36,44 +36,41 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
         }
 
         for event in events_rx.try_iter() {
-            match event {
-                Message::Quit => break 'outer,
+            let update_mode = if waiting {
+                UpdateMode::MarkAll
+            } else {
+                UpdateMode::Redraw
+            };
 
-                Message::Redraw => window.update(UpdateMode::Redraw, &mut view_mode)?,
+            match (event, view_mode) {
+                (Message::Quit, ..) => break 'outer,
 
-                Message::Delete if !waiting && matches!(view_mode, ViewMode::Normal) => {
-                    waiting = true;
+                (Message::Redraw, ..) => window.update(UpdateMode::Redraw, &mut view_mode)?,
+
+                (Message::Delete, ViewMode::Normal) if !waiting => {
+                    waiting = !waiting;
                     window.update(UpdateMode::MarkAll, &mut view_mode)?;
                 }
 
-                Message::Delete if waiting && matches!(view_mode, ViewMode::Normal) => {
-                    waiting = false;
+                (Message::Delete, ViewMode::Normal) if waiting => {
+                    waiting = !waiting;
                     window.update(UpdateMode::Redraw, &mut view_mode)?
                 }
 
-                Message::Char(ch) if waiting && matches!(view_mode, ViewMode::Normal) => {
+                (Message::Char(ch), ViewMode::Normal) if waiting => {
                     window.delete(ch, &mut view_mode)?;
                     waiting = false;
                     continue 'outer;
                 }
 
-                Message::NameColumnGrow | Message::NameColumnShrink
-                    if matches!(view_mode, ViewMode::Normal) =>
-                {
-                    const COLUMN_ACTION: [fn(&mut Window) -> bool; 2] = [
-                        Window::shrink_nick_column, // left
-                        Window::grow_nick_column,   // right
-                    ];
+                (Message::NameColumnGrow, ViewMode::Normal) => {
+                    if Window::grow_nick_column(&mut window) {
+                        window.update(update_mode, &mut view_mode)?;
+                    }
+                }
 
-                    // pick the current 'mode'
-                    let choice: usize = matches!(event, Message::NameColumnGrow) as u8 as _;
-                    // should we update the window?
-                    if COLUMN_ACTION[choice](&mut window) {
-                        let update_mode = if waiting {
-                            UpdateMode::MarkAll
-                        } else {
-                            UpdateMode::Redraw
-                        };
+                (Message::NameColumnShrink, ViewMode::Normal) => {
+                    if Window::shrink_nick_column(&mut window) {
                         window.update(update_mode, &mut view_mode)?;
                     }
                 }
