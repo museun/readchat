@@ -24,14 +24,16 @@ pub(crate) struct Window {
     queue: Queue<Privmsg<'static>>,
     left: usize,
     pad: String,
+    min: Option<usize>,
 }
 
 impl Window {
-    pub(crate) fn new(left: usize, limit: usize) -> Self {
+    pub(crate) fn new(left: usize, limit: usize, min: Option<usize>) -> Self {
         Self {
             left,
             pad: " ".repeat(left),
             queue: Queue::with_size(limit),
+            min,
         }
     }
 
@@ -39,9 +41,21 @@ impl Window {
         self.queue.push(message);
     }
 
-    pub(crate) fn update(&mut self, update: UpdateMode) -> anyhow::Result<()> {
+    pub(crate) fn update(
+        &mut self,
+        update: UpdateMode,
+        view_mode: &mut ViewMode,
+    ) -> anyhow::Result<()> {
+        const MIN: usize = 30;
+
         let (width, height) = terminal::size()?;
         let mut stdout = std::io::stdout();
+
+        *view_mode = if (width as usize) < self.min.unwrap_or(MIN) {
+            ViewMode::Compact
+        } else {
+            ViewMode::Normal
+        };
 
         match update {
             UpdateMode::Redraw if self.queue.is_empty() => return Ok(()),
@@ -49,7 +63,7 @@ impl Window {
                 crossterm::execute!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
                 for msg in self.queue.iter().rev().take(height as _).rev() {
                     let state = self.state(width);
-                    print_message(&mut stdout, msg, state)?;
+                    view_mode.print_message(&mut stdout, msg, state)?;
                 }
             }
             UpdateMode::Append => {
@@ -58,10 +72,10 @@ impl Window {
                         crossterm::execute!(stdout, MoveTo(0, 0))?;
                     }
                     let state = self.state(width);
-                    print_message(&mut stdout, msg, state)?;
+                    view_mode.print_message(&mut stdout, msg, state)?;
                 }
             }
-            UpdateMode::MarkAll => {
+            UpdateMode::MarkAll if matches!(view_mode, ViewMode::Normal) => {
                 crossterm::queue!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
 
                 let iter = self.queue.iter().rev().take((height) as _).rev();
@@ -72,21 +86,22 @@ impl Window {
                     // this'll stop printing deletion marks if we've reached the
                     // end of our alphabet
                     state.prefix = ch.next().copied();
-                    print_message(&mut stdout, msg, state)?;
+                    view_mode.print_message(&mut stdout, msg, state)?;
                 }
             }
+            _ => {}
         }
 
         stdout.flush()?;
         Ok(())
     }
 
-    pub(crate) fn delete(&mut self, ch: char) -> anyhow::Result<()> {
+    pub(crate) fn delete(&mut self, ch: char, view_mode: &mut ViewMode) -> anyhow::Result<()> {
         if let Some(p) = ALPHA.iter().position(|&c| c == ch) {
             let index = self.queue.len() - p - 1;
             self.queue.remove(index)
         }
-        self.update(UpdateMode::Redraw)
+        self.update(UpdateMode::Redraw, view_mode)
     }
 
     pub(crate) fn grow_nick_column(&mut self) -> bool {
@@ -145,53 +160,92 @@ struct State<'a> {
     indent: &'a str,
 }
 
-fn print_message(
-    stdout: &mut std::io::Stdout,
-    msg: &Privmsg<'_>,
-    state: State<'_>,
-) -> anyhow::Result<()> {
-    let RGB(r, g, b) = msg.color().unwrap_or_default().rgb;
-    let color = Color::Rgb { r, g, b };
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
+pub enum ViewMode {
+    Normal,
+    Compact,
+}
 
-    let p = state.prefix.map(|_| 4).unwrap_or(0);
+impl ViewMode {
+    fn print_message(
+        &self,
+        stdout: &mut std::io::Stdout,
+        msg: &Privmsg<'_>,
+        state: State<'_>,
+    ) -> anyhow::Result<()> {
+        let RGB(r, g, b) = msg.color().unwrap_or_default().rgb;
+        let color = Color::Rgb { r, g, b };
 
-    let name = truncate::truncate_or_pad(msg.name(), state.left - p);
-    let name = style(name).with(color);
-
-    let partition = partition::partition(
-        msg.data(),
-        state.width - p - state.left - 1 - state.indent.len(),
-    );
-
-    for (i, part) in partition.into_iter().enumerate() {
-        let first = i == 0;
-
-        crossterm::queue!(stdout, Print("\n"), MoveToColumn(0))?;
-
-        if let Some(prefix) = state.prefix {
-            if first {
-                crossterm::queue!(
-                    stdout,
-                    Print("["),
-                    Print(style(prefix).with(Color::Yellow)),
-                    Print("] ")
-                )?;
-            } else {
-                crossterm::queue!(stdout, Print("    "))?;
-            }
+        match self {
+            ViewMode::Normal => Self::print_normal(stdout, msg, state, color),
+            ViewMode::Compact => Self::print_compact(stdout, msg, state, color),
         }
-
-        if first {
-            crossterm::queue!(stdout, Print(&name))?;
-        } else {
-            crossterm::queue!(
-                stdout,
-                Print(&state.pad[..state.pad.len() - p]),
-                Print(state.indent)
-            )?;
-        }
-        crossterm::queue!(stdout, Print(" "), Print(part))?;
     }
 
-    Ok(())
+    fn print_normal(
+        stdout: &mut std::io::Stdout,
+        msg: &Privmsg<'_>,
+        state: State<'_>,
+        color: Color,
+    ) -> anyhow::Result<()> {
+        let p = state.prefix.map(|_| 4).unwrap_or(0);
+
+        let name = truncate::truncate_or_pad(msg.name(), state.left - p);
+        let name = style(name).with(color);
+
+        let partition = partition::partition(
+            msg.data(),
+            state.width - p - state.left - 1 - state.indent.len(),
+        );
+
+        for (i, part) in partition.into_iter().enumerate() {
+            let first = i == 0;
+
+            crossterm::queue!(stdout, Print("\n"), MoveToColumn(0))?;
+
+            if let Some(prefix) = state.prefix {
+                if first {
+                    crossterm::queue!(
+                        stdout,
+                        Print("["),
+                        Print(style(prefix).with(Color::Yellow)),
+                        Print("] ")
+                    )?;
+                } else {
+                    crossterm::queue!(stdout, Print("    "))?;
+                }
+            }
+
+            if first {
+                crossterm::queue!(stdout, Print(&name))?;
+            } else {
+                crossterm::queue!(
+                    stdout,
+                    Print(&state.pad[..state.pad.len() - p]),
+                    Print(state.indent)
+                )?;
+            }
+            crossterm::queue!(stdout, Print(" "), Print(part))?;
+        }
+
+        Ok(())
+    }
+
+    fn print_compact(
+        stdout: &mut std::io::Stdout,
+        msg: &Privmsg<'_>,
+        state: State<'_>,
+        color: Color,
+    ) -> anyhow::Result<()> {
+        let name = style(msg.name()).with(color);
+        let partition = partition::partition(msg.data(), state.width);
+
+        crossterm::queue!(stdout, Print("\n"), Print(&name))?;
+        for part in partition.into_iter() {
+            crossterm::queue!(stdout, Print("\n"), MoveToColumn(0), Print(part))?;
+        }
+        crossterm::queue!(stdout, Print("\n"))?;
+
+        Ok(())
+    }
 }

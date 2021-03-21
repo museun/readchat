@@ -19,6 +19,7 @@ flags:
 optional flags:
     -n, --nick-max <int>   the max width before truncation of nicknames
     -b, --buffer-max <int> the number of messages to keep in the redraw queue
+    -m, --min-width <int>  if window size is below this, use a compact view
 
 arguments:
     <string>               the twitch channel to join
@@ -30,6 +31,7 @@ pub struct Args {
     pub buffer_max: usize,
     pub debug: bool,
     pub transcribe: bool,
+    pub min_width: Option<usize>,
 }
 
 impl Args {
@@ -52,6 +54,8 @@ impl Args {
             .opt_value_from_str(["-b", "--buffer-max"])?
             .unwrap_or(100);
 
+        let min_width = args.opt_value_from_str(["-m", "--min-width"])?;
+
         let debug = args.contains(["-d", "--debug"]);
         let transcribe = args.contains(["-t", "--transcribe"]);
 
@@ -72,6 +76,7 @@ impl Args {
         Ok(Self {
             nick_max,
             buffer_max,
+            min_width,
             channel,
             debug,
             transcribe,

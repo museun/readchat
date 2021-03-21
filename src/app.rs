@@ -4,7 +4,7 @@ use crate::{
     args::Args,
     keys::{self, Message},
     twitch,
-    window::{UpdateMode, Window},
+    window::{UpdateMode, ViewMode, Window},
     Logger,
 };
 
@@ -14,7 +14,7 @@ use flume as channel;
 pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
     logger.transcribe(&format!("*** session start: {}", crate::timestamp()))?;
 
-    let mut window = Window::new(args.nick_max, args.buffer_max);
+    let mut window = Window::new(args.nick_max, args.buffer_max, args.min_width);
     let conn = connect(args.debug)?;
     let (sender, messages) = channel::bounded(64);
 
@@ -24,11 +24,13 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
     let (events_tx, events_rx) = channel::bounded(32);
     let mut waiting = false;
 
+    let mut view_mode = ViewMode::Normal;
+
     'outer: while keep_running(&messages) {
         if crossterm::event::poll(std::time::Duration::from_millis(150))? {
             match crossterm::event::read()? {
                 Event::Key(event) => keys::handle(event, &events_tx),
-                Event::Resize(_, _) => window.update(UpdateMode::Redraw)?,
+                Event::Resize(_, _) => window.update(UpdateMode::Redraw, &mut view_mode)?,
                 _ => {}
             }
         }
@@ -37,25 +39,27 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
             match event {
                 Message::Quit => break 'outer,
 
-                Message::Redraw => window.update(UpdateMode::Redraw)?,
+                Message::Redraw => window.update(UpdateMode::Redraw, &mut view_mode)?,
 
-                Message::Delete if !waiting => {
+                Message::Delete if !waiting && matches!(view_mode, ViewMode::Normal) => {
                     waiting = true;
-                    window.update(UpdateMode::MarkAll)?;
+                    window.update(UpdateMode::MarkAll, &mut view_mode)?;
                 }
 
-                Message::Delete if waiting => {
+                Message::Delete if waiting && matches!(view_mode, ViewMode::Normal) => {
                     waiting = false;
-                    window.update(UpdateMode::Redraw)?
+                    window.update(UpdateMode::Redraw, &mut view_mode)?
                 }
 
-                Message::Char(ch) if waiting => {
-                    window.delete(ch)?;
+                Message::Char(ch) if waiting && matches!(view_mode, ViewMode::Normal) => {
+                    window.delete(ch, &mut view_mode)?;
                     waiting = false;
                     continue 'outer;
                 }
 
-                Message::NameColumnGrow | Message::NameColumnShrink => {
+                Message::NameColumnGrow | Message::NameColumnShrink
+                    if matches!(view_mode, ViewMode::Normal) =>
+                {
                     use UpdateMode as U;
                     const COLUMN_ACTION: [fn(&mut Window) -> bool; 2] = [
                         Window::grow_nick_column, //
@@ -66,7 +70,8 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
                     let choice: usize = matches!(event, Message::NameColumnGrow) as u8 as _;
                     // should we update the window?
                     if COLUMN_ACTION[choice](&mut window) {
-                        window.update(if waiting { U::MarkAll } else { U::Redraw })?;
+                        window
+                            .update(if waiting { U::MarkAll } else { U::Redraw }, &mut view_mode)?;
                     }
                 }
 
@@ -86,7 +91,7 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
                 msg.data()
             ))?;
             window.push(msg);
-            window.update(UpdateMode::Append)?;
+            window.update(UpdateMode::Append, &mut view_mode)?;
         }
     }
 
