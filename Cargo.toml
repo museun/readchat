@@ -8,6 +8,7 @@ license    = "Unlicense"
 
 [dependencies]
 anyhow               = "1.0.39"
+chrono               = { version = "0.4.19", default-features = false, features = ["clock"] }
 crossterm            = "0.19.0"
 dirs                 = "3.0.1"
 fastrand             = "1.4.0"

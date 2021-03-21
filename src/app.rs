@@ -18,8 +18,11 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
     let conn = connect(args.debug)?;
     let (sender, messages) = channel::bounded(64);
 
-    let _ = std::thread::spawn(move || {
-        let _ = twitch::run_to_completion(args.channel, sender, conn);
+    let _ = std::thread::spawn({
+        let channel = args.channel.clone();
+        move || {
+            let _ = twitch::run_to_completion(channel, sender, conn);
+        }
     });
     let (events_tx, events_rx) = channel::bounded(32);
     let mut waiting = false;
@@ -30,7 +33,7 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
         if crossterm::event::poll(std::time::Duration::from_millis(150))? {
             match crossterm::event::read()? {
                 Event::Key(event) => keys::handle(event, &events_tx),
-                Event::Resize(_, _) => window.update(UpdateMode::Redraw, &mut view_mode)?,
+                Event::Resize(_, _) => window.update(UpdateMode::Redraw, &mut view_mode, &args)?,
                 _ => {}
             }
         }
@@ -45,33 +48,35 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
             match (event, view_mode) {
                 (Message::Quit, ..) => break 'outer,
 
-                (Message::Redraw, ..) => window.update(UpdateMode::Redraw, &mut view_mode)?,
+                (Message::Redraw, ..) => {
+                    window.update(UpdateMode::Redraw, &mut view_mode, &args)?
+                }
 
                 (Message::Delete, ViewMode::Normal) if !waiting => {
                     waiting = !waiting;
-                    window.update(UpdateMode::MarkAll, &mut view_mode)?;
+                    window.update(UpdateMode::MarkAll, &mut view_mode, &args)?;
                 }
 
                 (Message::Delete, ViewMode::Normal) if waiting => {
                     waiting = !waiting;
-                    window.update(UpdateMode::Redraw, &mut view_mode)?
+                    window.update(UpdateMode::Redraw, &mut view_mode, &args)?
                 }
 
                 (Message::Char(ch), ViewMode::Normal) if waiting => {
-                    window.delete(ch, &mut view_mode)?;
+                    window.delete(ch, &mut view_mode, &args)?;
                     waiting = false;
                     continue 'outer;
                 }
 
                 (Message::NameColumnGrow, ViewMode::Normal) => {
                     if Window::grow_nick_column(&mut window) {
-                        window.update(update_mode, &mut view_mode)?;
+                        window.update(update_mode, &mut view_mode, &args)?;
                     }
                 }
 
                 (Message::NameColumnShrink, ViewMode::Normal) => {
                     if Window::shrink_nick_column(&mut window) {
-                        window.update(update_mode, &mut view_mode)?;
+                        window.update(update_mode, &mut view_mode, &args)?;
                     }
                 }
 
@@ -91,7 +96,7 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
                 msg.data()
             ))?;
             window.push(msg);
-            window.update(UpdateMode::Append, &mut view_mode)?;
+            window.update(UpdateMode::Append, &mut view_mode, &args)?;
         }
     }
 

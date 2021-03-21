@@ -1,3 +1,5 @@
+use crate::Args;
+
 use super::{partition, queue::Queue, truncate};
 
 use std::{borrow::Cow, io::Write as _};
@@ -15,7 +17,9 @@ const MAX_COLUMN_WIDTH: usize = 25;
 // TODO make this configurable
 const MIN_COLUMN_WIDTH: usize = 5;
 // TODO make this configurable
-const MIN_WIDTH: usize = 30;
+const MIN_WINDOW_WIDTH: usize = 30;
+// TODO make this configurable
+const TS_COLOR: Color = Color::DarkYellow;
 
 pub enum UpdateMode {
     Redraw,
@@ -24,7 +28,7 @@ pub enum UpdateMode {
 }
 
 pub(crate) struct Window {
-    queue: Queue<Privmsg<'static>>,
+    queue: Queue<Message<'static>>,
     left: usize,
     pad: String,
     min: Option<usize>,
@@ -41,18 +45,19 @@ impl Window {
     }
 
     pub(crate) fn push(&mut self, message: Privmsg<'static>) {
-        self.queue.push(message);
+        self.queue.push(Message::new(message));
     }
 
     pub(crate) fn update(
         &mut self,
         update: UpdateMode,
         view_mode: &mut ViewMode,
+        args: &Args,
     ) -> anyhow::Result<()> {
         let (width, height) = terminal::size()?;
         let mut stdout = std::io::stdout();
 
-        *view_mode = if (width as usize) < self.min.unwrap_or(MIN_WIDTH) {
+        *view_mode = if (width as usize) < self.min.unwrap_or(MIN_WINDOW_WIDTH) {
             ViewMode::Compact
         } else {
             ViewMode::Normal
@@ -60,22 +65,25 @@ impl Window {
 
         match update {
             UpdateMode::Redraw if self.queue.is_empty() => return Ok(()),
+
             UpdateMode::Redraw => {
                 crossterm::execute!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
                 for msg in self.queue.iter().rev().take(height as _).rev() {
-                    let state = self.state(width);
+                    let state = self.state(width, args.timestamps);
                     view_mode.print_message(&mut stdout, msg, state)?;
                 }
             }
+
             UpdateMode::Append => {
                 if let Some(msg) = self.queue.last() {
                     if self.queue.len() == 1 {
                         crossterm::execute!(stdout, MoveTo(0, 0))?;
                     }
-                    let state = self.state(width);
+                    let state = self.state(width, args.timestamps);
                     view_mode.print_message(&mut stdout, msg, state)?;
                 }
             }
+
             UpdateMode::MarkAll if matches!(view_mode, ViewMode::Normal) => {
                 crossterm::queue!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
 
@@ -83,7 +91,7 @@ impl Window {
                 let mut ch = ALPHA.iter().take(iter.len()).rev();
 
                 for msg in iter {
-                    let mut state = self.state(width);
+                    let mut state = self.state(width, args.timestamps);
                     // this'll stop printing deletion marks if we've reached the
                     // end of our alphabet
                     state.prefix = ch.next().copied();
@@ -97,12 +105,17 @@ impl Window {
         Ok(())
     }
 
-    pub(crate) fn delete(&mut self, ch: char, view_mode: &mut ViewMode) -> anyhow::Result<()> {
+    pub(crate) fn delete(
+        &mut self,
+        ch: char,
+        view_mode: &mut ViewMode,
+        args: &Args,
+    ) -> anyhow::Result<()> {
         if let Some(p) = ALPHA.iter().position(|&c| c == ch) {
             let index = self.queue.len() - p - 1;
             self.queue.remove(index)
         }
-        self.update(UpdateMode::Redraw, view_mode)
+        self.update(UpdateMode::Redraw, view_mode, args)
     }
 
     pub(crate) fn grow_nick_column(&mut self) -> bool {
@@ -127,13 +140,14 @@ impl Window {
         true
     }
 
-    fn state(&self, width: u16) -> State<'_> {
+    fn state(&self, width: u16, show_timestamp: bool) -> State<'_> {
         State {
             prefix: None,
             left: self.left,
             width: width as _,
             pad: &self.pad,
             indent: "",
+            show_timestamp,
         }
     }
 }
@@ -157,6 +171,7 @@ struct State<'a> {
     prefix: Option<char>,
     left: usize,
     width: usize,
+    show_timestamp: bool,
     pad: &'a str,
     indent: &'a str,
 }
@@ -171,10 +186,10 @@ impl ViewMode {
     fn print_message(
         &self,
         stdout: &mut std::io::Stdout,
-        msg: &Privmsg<'_>,
+        msg: &Message<'_>,
         state: State<'_>,
     ) -> anyhow::Result<()> {
-        let RGB(r, g, b) = msg.color().unwrap_or_default().rgb;
+        let RGB(r, g, b) = msg.pm.color().unwrap_or_default().rgb;
         let color = Color::Rgb { r, g, b };
 
         match self {
@@ -185,17 +200,17 @@ impl ViewMode {
 
     fn print_normal(
         stdout: &mut std::io::Stdout,
-        msg: &Privmsg<'_>,
+        msg: &Message<'_>,
         state: State<'_>,
         color: Color,
     ) -> anyhow::Result<()> {
         let p = state.prefix.map(|_| 4).unwrap_or(0);
 
-        let name = truncate::truncate_or_pad(msg.name(), state.left - p);
+        let name = truncate::truncate_or_pad(msg.pm.name(), state.left - p);
         let name = style(name).with(color);
 
         let partition = partition::partition(
-            msg.data(),
+            msg.pm.data(),
             state.width - p - state.left - 1 - state.indent.len(),
         );
 
@@ -234,11 +249,19 @@ impl ViewMode {
 
     fn print_compact(
         stdout: &mut std::io::Stdout,
-        msg: &Privmsg<'_>,
+        msg: &Message<'_>,
         state: State<'_>,
         color: Color,
     ) -> anyhow::Result<()> {
-        let name = msg.name();
+        const TS_FORMAT: usize = "HH:MM:SS".len();
+
+        let name = msg.pm.name();
+        let middle = if state.show_timestamp {
+            state.width - name.width() - TS_FORMAT
+        } else {
+            0
+        };
+
         let name = if name.width() > state.width {
             Cow::Owned(truncate::truncate_or_pad(name, state.width))
         } else {
@@ -246,14 +269,34 @@ impl ViewMode {
         };
 
         let name = style(name).with(color);
-        let partition = partition::partition(msg.data(), state.width);
+        let partition = partition::partition(msg.pm.data(), state.width);
 
         crossterm::queue!(stdout, Print("\n"), MoveToColumn(0), Print(&name))?;
+        if state.show_timestamp {
+            let ts = style(msg.ts.format("%X").to_string()).with(TS_COLOR);
+            crossterm::queue!(stdout, Print(" ".repeat(middle)), Print(ts))?;
+        }
+
         for part in partition {
             crossterm::queue!(stdout, Print("\n"), MoveToColumn(0), Print(part))?;
         }
         crossterm::queue!(stdout, Print("\n"), MoveToColumn(0))?;
 
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct Message<'msg> {
+    pm: Privmsg<'msg>,
+    ts: chrono::DateTime<chrono::Local>,
+}
+
+impl<'msg> Message<'msg> {
+    fn new(pm: Privmsg<'msg>) -> Self {
+        Self {
+            pm,
+            ts: chrono::Local::now(),
+        }
     }
 }

@@ -20,6 +20,7 @@ optional flags:
     -n, --nick-max <int>   the max width before truncation of nicknames
     -b, --buffer-max <int> the number of messages to keep in the redraw queue
     -m, --min-width <int>  if window size is below this, use a compact view
+    -s, --timestamp        render timestamps of messages, in the compact view
 
 arguments:
     <string>               the twitch channel to join
@@ -31,6 +32,7 @@ pub struct Args {
     pub buffer_max: usize,
     pub debug: bool,
     pub transcribe: bool,
+    pub timestamps: bool,
     pub min_width: Option<usize>,
 }
 
@@ -58,6 +60,7 @@ impl Args {
 
         let debug = args.contains(["-d", "--debug"]);
         let transcribe = args.contains(["-t", "--transcribe"]);
+        let timestamps = args.contains(["-s", "--timestamp"]);
 
         let mut channels = args.finish();
         let channel = match channels.len() {
@@ -80,6 +83,7 @@ impl Args {
             channel,
             debug,
             transcribe,
+            timestamps,
         })
     }
 }
