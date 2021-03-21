@@ -1,6 +1,6 @@
 use super::{partition, queue::Queue, truncate};
 
-use std::io::Write as _;
+use std::{borrow::Cow, io::Write as _};
 
 use crossterm::{
     cursor::*,
@@ -8,6 +8,7 @@ use crossterm::{
     terminal::{self, *},
 };
 use twitchchat::{messages::Privmsg, twitch::color::RGB};
+use unicode_width::UnicodeWidthStr;
 
 // TODO make these configurable
 const MAX_COLUMN_WIDTH: usize = 25;
@@ -237,7 +238,14 @@ impl ViewMode {
         state: State<'_>,
         color: Color,
     ) -> anyhow::Result<()> {
-        let name = style(msg.name()).with(color);
+        let name = msg.name();
+        let name = if name.width() > state.width {
+            Cow::Owned(truncate::truncate_or_pad(name, state.width))
+        } else {
+            Cow::Borrowed(name)
+        };
+
+        let name = style(name).with(color);
         let partition = partition::partition(msg.data(), state.width);
 
         crossterm::queue!(stdout, Print("\n"), MoveToColumn(0), Print(&name))?;

@@ -122,7 +122,7 @@ impl Chatter {
         let mut name = format!(
             "{}{}",
             ADJECTIVES.choose().unwrap(),
-            ANIMALS.choose().unwrap()
+            ANIMALS.choose().unwrap(),
         );
         name.push_str(
             &std::iter::repeat_with(|| fastrand::u8(b'0'..b'9'))
