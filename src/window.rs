@@ -240,11 +240,11 @@ impl ViewMode {
         let name = style(msg.name()).with(color);
         let partition = partition::partition(msg.data(), state.width);
 
-        crossterm::queue!(stdout, Print("\n"), Print(&name))?;
+        crossterm::queue!(stdout, Print("\n"), MoveToColumn(0), Print(&name))?;
         for part in partition.into_iter() {
             crossterm::queue!(stdout, Print("\n"), MoveToColumn(0), Print(part))?;
         }
-        crossterm::queue!(stdout, Print("\n"))?;
+        crossterm::queue!(stdout, Print("\n"), MoveToColumn(0))?;
 
         Ok(())
     }
