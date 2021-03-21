@@ -60,7 +60,6 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
                 Message::NameColumnGrow | Message::NameColumnShrink
                     if matches!(view_mode, ViewMode::Normal) =>
                 {
-                    use UpdateMode as U;
                     const COLUMN_ACTION: [fn(&mut Window) -> bool; 2] = [
                         Window::shrink_nick_column, // left
                         Window::grow_nick_column,   // right
@@ -70,8 +69,12 @@ pub fn main_loop(args: Args, mut logger: Logger) -> anyhow::Result<()> {
                     let choice: usize = matches!(event, Message::NameColumnGrow) as u8 as _;
                     // should we update the window?
                     if COLUMN_ACTION[choice](&mut window) {
-                        window
-                            .update(if waiting { U::MarkAll } else { U::Redraw }, &mut view_mode)?;
+                        let update_mode = if waiting {
+                            UpdateMode::MarkAll
+                        } else {
+                            UpdateMode::Redraw
+                        };
+                        window.update(update_mode, &mut view_mode)?;
                     }
                 }
 
