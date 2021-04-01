@@ -180,26 +180,28 @@ struct State<'a> {
 pub enum ViewMode {
     Normal,
     Compact,
+    ForcedNormal,
+    ForcedCompact,
 }
 
 impl ViewMode {
     fn print_message(
         &self,
-        stdout: &mut std::io::Stdout,
+        stdout: &mut impl Write,
         msg: &Message<'_>,
         state: State<'_>,
     ) -> anyhow::Result<()> {
-        let RGB(r, g, b) = msg.pm.color().unwrap_or_default().rgb;
-        let color = Color::Rgb { r, g, b };
+        let print = match self {
+            Self::ForcedNormal | Self::Normal => Self::print_normal,
+            Self::ForcedCompact | Self::Compact => Self::print_compact,
+        };
 
-        match self {
-            ViewMode::Normal => Self::print_normal(stdout, msg, state, color),
-            ViewMode::Compact => Self::print_compact(stdout, msg, state, color),
-        }
+        let RGB(r, g, b) = msg.pm.color().unwrap_or_default().rgb;
+        print(stdout, msg, state, Color::Rgb { r, g, b })
     }
 
     fn print_normal(
-        stdout: &mut std::io::Stdout,
+        stdout: &mut impl Write,
         msg: &Message<'_>,
         state: State<'_>,
         color: Color,
@@ -248,7 +250,7 @@ impl ViewMode {
     }
 
     fn print_compact(
-        stdout: &mut std::io::Stdout,
+        stdout: &mut impl Write,
         msg: &Message<'_>,
         state: State<'_>,
         color: Color,
@@ -256,31 +258,36 @@ impl ViewMode {
         const TS_FORMAT: usize = "HH:MM:SS".len();
 
         let name = msg.pm.name();
-        let middle = if state.show_timestamp {
-            state.width - name.width() - TS_FORMAT
-        } else {
-            0
-        };
+        let middle = state
+            .show_timestamp
+            .then(|| state.width - name.width() - TS_FORMAT)
+            .unwrap_or_default();
 
-        let name = if name.width() > state.width {
-            Cow::Owned(truncate::truncate_or_pad(name, state.width))
-        } else {
-            Cow::Borrowed(name)
-        };
+        let name = (name.width() > state.width)
+            .then(|| truncate::truncate_or_pad(name, state.width))
+            .map(Cow::Owned)
+            .unwrap_or_else(|| Cow::Borrowed(name));
 
-        let name = style(name).with(color);
-        let partition = partition::partition(msg.pm.data(), state.width);
+        crossterm::queue!(
+            stdout,
+            Print("\n"),
+            MoveToColumn(0),
+            Print(&style(name).with(color))
+        )?;
 
-        crossterm::queue!(stdout, Print("\n"), MoveToColumn(0), Print(&name))?;
         if state.show_timestamp {
             let ts = style(msg.ts.format("%X").to_string()).with(TS_COLOR);
             crossterm::queue!(stdout, Print(" ".repeat(middle)), Print(ts))?;
         }
 
-        for part in partition {
-            crossterm::queue!(stdout, Print("\n"), MoveToColumn(0), Print(part))?;
-        }
-        crossterm::queue!(stdout, Print("\n"), MoveToColumn(0))?;
+        crossterm::queue!(
+            stdout,
+            Print("\n"),
+            MoveToColumn(0),
+            Print(msg.pm.data()),
+            Print("\n"),
+            MoveToColumn(0)
+        )?;
 
         Ok(())
     }

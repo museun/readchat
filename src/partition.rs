@@ -2,7 +2,8 @@ use unicode_segmentation::UnicodeSegmentation as _;
 use unicode_width::UnicodeWidthStr as _;
 
 pub fn partition(input: &str, max: usize) -> Vec<String> {
-    let mut vec = vec![];
+    let cap = (input.width() as f64 / max as f64).round() as usize;
+    let mut vec = Vec::with_capacity(cap);
 
     let new_string = || String::with_capacity(max);
 
@@ -56,5 +57,8 @@ pub fn partition(input: &str, max: usize) -> Vec<String> {
     if !temp.is_empty() {
         vec.push(temp)
     }
+
+    // we've optimistically, likely allocated more than we need. drop the rest
+    vec.shrink_to_fit();
     vec
 }

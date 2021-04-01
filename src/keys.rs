@@ -24,13 +24,14 @@ pub fn handle(event: KeyEvent, events: &Sender<Message>) {
         key!(ctrl 'c') => send!(Quit),
         key!(ctrl 'r') => send!(Redraw),
         key!(ctrl 'd') => send!(Delete),
+
         key!(char '[') | key!(shift '<') => send!(NameColumnShrink),
         key!(char ']') | key!(shift '>') => send!(NameColumnGrow),
 
-        KeyEvent {
-            code: KeyCode::Char(ch),
-            modifiers,
-        } if is_mark(ch, modifiers) => {
+        key!(char 't') => send!(ToggleTimestamps),
+
+        #[rustfmt::skip]
+        KeyEvent { code: KeyCode::Char(ch), modifiers } if is_mark(ch, modifiers) => {
             let _ = events.send(Message::Char(ch));
         }
 
@@ -46,4 +47,5 @@ pub enum Message {
     Char(char),
     NameColumnGrow,
     NameColumnShrink,
+    ToggleTimestamps,
 }
