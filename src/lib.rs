@@ -5,7 +5,7 @@ mod alt_screen;
 pub use alt_screen::AltScreen;
 
 mod app;
-pub use app::main_loop;
+pub use app::App;
 
 mod args;
 mod queue;

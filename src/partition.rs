@@ -62,3 +62,34 @@ pub fn partition(input: &str, max: usize) -> Vec<String> {
     vec.shrink_to_fit();
     vec
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn partition() {
+        let s = "hello       world !this !is, !some, !commands. And this is a new statement?";
+
+        for a in s.split_word_bounds() {
+            eprintln!("'{}'", a.escape_debug());
+        }
+
+        // for i in std::array::IntoIter::new([10, 20, 30, 40, 50]) {
+        //     eprintln!("{}", "-".repeat(i));
+
+        //     for line in super::partition(
+        //         "hello       world !this !is, !some, !commands. And this is a new statement?",
+        //         i,
+        //     ) {
+        //         eprintln!(
+        //             "{}| {: >n$}",
+        //             line.escape_debug(),
+        //             line.len(),
+        //             n = (52usize).saturating_sub(line.len())
+        //         );
+        //     }
+
+        //     eprintln!("{}", "-".repeat(i));
+        // }
+    }
+}

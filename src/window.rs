@@ -1,8 +1,8 @@
-use crate::Args;
+use crate::App;
 
 use super::{partition, queue::Queue, truncate};
 
-use std::{borrow::Cow, io::Write as _};
+use std::{borrow::Cow, io::Write};
 
 use crossterm::{
     cursor::*,
@@ -21,10 +21,12 @@ const MIN_WINDOW_WIDTH: usize = 30;
 // TODO make this configurable
 const TS_COLOR: Color = Color::DarkYellow;
 
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub enum UpdateMode {
     Redraw,
     Append,
     MarkAll,
+    Info,
 }
 
 pub(crate) struct Window {
@@ -48,20 +50,20 @@ impl Window {
         self.queue.push(Message::new(message));
     }
 
-    pub(crate) fn update(
-        &mut self,
-        update: UpdateMode,
-        view_mode: &mut ViewMode,
-        args: &Args,
-    ) -> anyhow::Result<()> {
+    pub(crate) fn update(&mut self, app: &mut App, update: UpdateMode) -> anyhow::Result<()> {
         let (width, height) = terminal::size()?;
         let mut stdout = std::io::stdout();
 
-        *view_mode = if (width as usize) < self.min.unwrap_or(MIN_WINDOW_WIDTH) {
-            ViewMode::Compact
-        } else {
-            ViewMode::Normal
-        };
+        if !matches!(
+            app.view_mode,
+            ViewMode::ForcedNormal | ViewMode::ForcedCompact
+        ) {
+            app.view_mode = if (width as usize) < self.min.unwrap_or(MIN_WINDOW_WIDTH) {
+                ViewMode::Compact
+            } else {
+                ViewMode::Normal
+            };
+        }
 
         match update {
             UpdateMode::Redraw if self.queue.is_empty() => return Ok(()),
@@ -69,8 +71,8 @@ impl Window {
             UpdateMode::Redraw => {
                 crossterm::execute!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
                 for msg in self.queue.iter().rev().take(height as _).rev() {
-                    let state = self.state(width, args.timestamps);
-                    view_mode.print_message(&mut stdout, msg, state)?;
+                    let state = self.state(width, app.args.timestamps);
+                    app.view_mode.print_message(&mut stdout, msg, state)?;
                 }
             }
 
@@ -79,23 +81,25 @@ impl Window {
                     if self.queue.len() == 1 {
                         crossterm::execute!(stdout, MoveTo(0, 0))?;
                     }
-                    let state = self.state(width, args.timestamps);
-                    view_mode.print_message(&mut stdout, msg, state)?;
+                    let state = self.state(width, app.args.timestamps);
+                    app.view_mode.print_message(&mut stdout, msg, state)?;
                 }
             }
 
-            UpdateMode::MarkAll if matches!(view_mode, ViewMode::Normal) => {
+            UpdateMode::MarkAll
+                if matches!(app.view_mode, ViewMode::Normal | ViewMode::ForcedNormal) =>
+            {
                 crossterm::queue!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
 
                 let iter = self.queue.iter().rev().take((height) as _).rev();
                 let mut ch = ALPHA.iter().take(iter.len()).rev();
 
                 for msg in iter {
-                    let mut state = self.state(width, args.timestamps);
+                    let mut state = self.state(width, app.args.timestamps);
                     // this'll stop printing deletion marks if we've reached the
                     // end of our alphabet
                     state.prefix = ch.next().copied();
-                    view_mode.print_message(&mut stdout, msg, state)?;
+                    app.view_mode.print_message(&mut stdout, msg, state)?;
                 }
             }
             _ => {}
@@ -105,17 +109,12 @@ impl Window {
         Ok(())
     }
 
-    pub(crate) fn delete(
-        &mut self,
-        ch: char,
-        view_mode: &mut ViewMode,
-        args: &Args,
-    ) -> anyhow::Result<()> {
+    pub(crate) fn delete(&mut self, ch: char, app: &mut App) -> anyhow::Result<()> {
         if let Some(p) = ALPHA.iter().position(|&c| c == ch) {
             let index = self.queue.len() - p - 1;
             self.queue.remove(index)
         }
-        self.update(UpdateMode::Redraw, view_mode, args)
+        self.update(app, UpdateMode::Redraw)
     }
 
     pub(crate) fn grow_nick_column(&mut self) -> bool {
