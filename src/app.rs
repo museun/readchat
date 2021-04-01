@@ -22,13 +22,12 @@ impl App {
     pub fn run(args: Args, mut logger: Logger) -> anyhow::Result<()> {
         logger.transcribe(&format!("*** session start: {}", crate::timestamp()))?;
 
-        let addr = if args.debug {
+        let conn = if args.debug {
             use crate::testing::*;
-            make_interesting_chat(TestingOpts::load())?
+            TcpStream::connect(make_interesting_chat(TestingOpts::load())?)?
         } else {
-            twitchchat::TWITCH_IRC_ADDRESS.parse()?
+            TcpStream::connect(twitchchat::TWITCH_IRC_ADDRESS)?
         };
-        let conn = TcpStream::connect(addr)?;
 
         let (sender, messages) = channel::bounded(64);
         let _ = std::thread::spawn({
