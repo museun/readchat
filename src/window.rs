@@ -26,7 +26,6 @@ pub enum UpdateMode {
     Redraw,
     Append,
     MarkAll,
-    Info,
 }
 
 pub(crate) struct Window {
@@ -54,16 +53,11 @@ impl Window {
         let (width, height) = terminal::size()?;
         let mut stdout = std::io::stdout();
 
-        if !matches!(
-            app.view_mode,
-            ViewMode::ForcedNormal | ViewMode::ForcedCompact
-        ) {
-            app.view_mode = if (width as usize) < self.min.unwrap_or(MIN_WINDOW_WIDTH) {
-                ViewMode::Compact
-            } else {
-                ViewMode::Normal
-            };
-        }
+        app.view_mode = if (width as usize) < self.min.unwrap_or(MIN_WINDOW_WIDTH) {
+            ViewMode::Compact
+        } else {
+            ViewMode::Normal
+        };
 
         match update {
             UpdateMode::Redraw if self.queue.is_empty() => return Ok(()),
@@ -86,9 +80,7 @@ impl Window {
                 }
             }
 
-            UpdateMode::MarkAll
-                if matches!(app.view_mode, ViewMode::Normal | ViewMode::ForcedNormal) =>
-            {
+            UpdateMode::MarkAll if matches!(app.view_mode, ViewMode::Normal) => {
                 crossterm::queue!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
 
                 let iter = self.queue.iter().rev().take((height) as _).rev();
@@ -179,8 +171,6 @@ struct State<'a> {
 pub enum ViewMode {
     Normal,
     Compact,
-    ForcedNormal,
-    ForcedCompact,
 }
 
 impl ViewMode {
@@ -191,8 +181,8 @@ impl ViewMode {
         state: State<'_>,
     ) -> anyhow::Result<()> {
         let print = match self {
-            Self::ForcedNormal | Self::Normal => Self::print_normal,
-            Self::ForcedCompact | Self::Compact => Self::print_compact,
+            Self::Normal => Self::print_normal,
+            Self::Compact => Self::print_compact,
         };
 
         let RGB(r, g, b) = msg.pm.color().unwrap_or_default().rgb;

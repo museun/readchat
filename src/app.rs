@@ -1,7 +1,4 @@
-use std::{
-    net::TcpStream,
-    time::{Duration, Instant},
-};
+use std::{net::TcpStream, time::Duration};
 
 use crate::{
     args::Args,
@@ -17,7 +14,6 @@ use flume as channel;
 pub struct App {
     pub(crate) view_mode: ViewMode,
     pub(crate) waiting: bool,
-    pub(crate) showing_info: Option<Instant>,
     pub(crate) window: Option<Window>,
     pub(crate) args: Args,
 }
@@ -48,12 +44,8 @@ impl App {
                 .min_width
                 .map(|_| ViewMode::Compact)
                 .unwrap_or(ViewMode::Normal),
-
             window: Some(Window::new(args.nick_max, args.buffer_max, args.min_width)),
-
             waiting: false,
-            showing_info: None,
-
             args,
         };
 
@@ -102,10 +94,9 @@ impl App {
     fn dispatch(&mut self, event: Message) -> anyhow::Result<bool> {
         use {Message as M, ViewMode as V};
 
-        let update_mode = match (self.waiting, self.showing_info) {
-            (.., Some(..)) => UpdateMode::Info,
-            (false, None) => UpdateMode::Redraw,
-            (true, None) => UpdateMode::MarkAll,
+        let update_mode = match self.waiting {
+            false => UpdateMode::Redraw,
+            true => UpdateMode::MarkAll,
         };
 
         match (event, self.view_mode) {
@@ -113,17 +104,17 @@ impl App {
 
             (M::Redraw, ..) => self.update(UpdateMode::Redraw)?,
 
-            (M::Delete, V::Normal) | (M::Delete, V::ForcedNormal) if !self.waiting => {
+            (M::Delete, V::Normal) if !self.waiting => {
                 self.waiting = !self.waiting;
                 self.update(UpdateMode::MarkAll)?;
             }
 
-            (M::Delete, V::Normal) | (M::Delete, V::ForcedNormal) if self.waiting => {
+            (M::Delete, V::Normal) if self.waiting => {
                 self.waiting = !self.waiting;
                 self.update(UpdateMode::Redraw)?
             }
 
-            (M::Char(ch), V::Normal) | (M::Char(ch), V::ForcedNormal) if self.waiting => {
+            (M::Char(ch), V::Normal) if self.waiting => {
                 return self
                     .with_window(|window, this| {
                         window.delete(ch, this)?;
@@ -133,23 +124,21 @@ impl App {
                     .map(|_| true)
             }
 
-            (M::NameColumnGrow, V::Normal) | (M::NameColumnGrow, V::ForcedNormal) => self
-                .with_window(|window, this| {
-                    if Window::grow_nick_column(window) {
-                        return window.update(this, update_mode);
-                    }
-                    Ok(())
-                })?,
+            (M::NameColumnGrow, V::Normal) => self.with_window(|window, this| {
+                if Window::grow_nick_column(window) {
+                    return window.update(this, update_mode);
+                }
+                Ok(())
+            })?,
 
-            (M::NameColumnShrink, V::Normal) | (M::NameColumnShrink, V::ForcedNormal) => self
-                .with_window(|window, this| {
-                    if Window::shrink_nick_column(window) {
-                        return window.update(this, update_mode);
-                    }
-                    Ok(())
-                })?,
+            (M::NameColumnShrink, V::Normal) => self.with_window(|window, this| {
+                if Window::shrink_nick_column(window) {
+                    return window.update(this, update_mode);
+                }
+                Ok(())
+            })?,
 
-            (M::ToggleTimestamps, V::Compact) | (M::ToggleTimestamps, V::ForcedCompact) => {
+            (M::ToggleTimestamps, V::Compact) => {
                 self.args.timestamps = !self.args.timestamps;
                 self.update(UpdateMode::Redraw)?;
             }
