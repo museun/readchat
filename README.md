@@ -11,7 +11,7 @@ a simple program to display twitch chat in your terminal
 > readchat some_channel
 
 ```
-readchat 0.4.0
+readchat 0.4.1
 
 description:
     simply read-only client for a single twitch channel's chat
@@ -41,13 +41,14 @@ arguments:
 
 ## keybinds:
 
-| key      | action             | remarks                                           |
-| -------- | ------------------ | ------------------------------------------------- |
-| `ctrl-c` | quit               | ---                                               |
-| `ctrl-r` | force a redraw     | ---                                               |
-| `ctrl-d` | delete a line      | press `ctrl-d` to exit this mode without deleting |
-| `<`      | shrink name column | minimum is **5** columns                          |
-| `>`      | grow name column   | maximum is **30** columns                         |
+| key      | action                | remarks                                           |
+| -------- | --------------------- | ------------------------------------------------- |
+| `ctrl-c` | quit                  | ---                                               |
+| `ctrl-r` | force a redraw        | ---                                               |
+| `ctrl-d` | delete a line         | press `ctrl-d` to exit this mode without deleting |
+| `<`      | shrink name column    | minimum is **5** columns                          |
+| `>`      | grow name column      | maximum is **30** columns                         |
+| `t`      | toggle the timestamps | only applicable in compact mode                   |
 
 ## deleting:
 
