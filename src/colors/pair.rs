@@ -1,4 +1,4 @@
-use crate::color::Color;
+use super::Color;
 use crossterm::style::StyledContent;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;

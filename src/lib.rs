@@ -11,15 +11,6 @@ pub use app::App;
 pub use args::Args;
 pub use logger::Logger;
 
-mod color;
-mod color_mapping;
-mod interactions;
-mod pair;
-mod table;
-mod user_defined_color;
-
-mod uniqueish_colors;
-
 mod debug;
 mod queue;
 mod twitch;

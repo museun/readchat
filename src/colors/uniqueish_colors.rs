@@ -1,6 +1,5 @@
-use crate::{
-    array_iter, color::Color, colors::DEFAULT_COLORS, user_defined_color::UserDefinedColor,
-};
+use super::{Color, UserDefinedColor, DEFAULT_COLORS};
+use crate::array_iter;
 
 #[derive(Debug)]
 pub struct UniqueishColors<const N: usize> {

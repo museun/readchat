@@ -1,14 +1,8 @@
-use std::{collections::HashMap, io::Write};
-
+use super::{Color, Render, UserDefinedColor, COLOR_NAMES, DEFAULT_COLORS};
+use crate::array_iter;
 use crossterm::style::style;
 use serde::{Deserialize, Serialize};
-
-use crate::{
-    array_iter,
-    color::Color,
-    colors::{Render, COLOR_NAMES, DEFAULT_COLORS},
-    user_defined_color::UserDefinedColor,
-};
+use std::{collections::HashMap, io::Write};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ColorMapping {
@@ -43,7 +37,7 @@ impl Render for ColorMapping {
             })
             .collect();
 
-        crate::table::draw_table(w, headers, &*rows)
+        super::draw_table(w, headers, &*rows)
     }
 }
 

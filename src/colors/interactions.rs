@@ -1,4 +1,4 @@
-use crate::{colors::Render, user_defined_color::UserDefinedColor};
+use super::{Render, UserDefinedColor};
 use crossterm::style::{style, Print};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -41,7 +41,7 @@ impl Render for Interactions {
             Print(":\n")
         )?;
         let rows = make_rows(&self.highlight);
-        crate::table::draw_table(&mut w, headers, &*rows)?;
+        super::draw_table(&mut w, headers, &*rows)?;
         crossterm::queue!(w, Print("\n"))?;
 
         crossterm::queue!(
@@ -50,7 +50,7 @@ impl Render for Interactions {
             Print(":\n")
         )?;
         let rows = make_rows(&self.mention);
-        crate::table::draw_table(&mut w, headers, &*rows)
+        super::draw_table(&mut w, headers, &*rows)
     }
 }
 

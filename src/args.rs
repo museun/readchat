@@ -1,6 +1,6 @@
 use twitchchat::commands::Channel;
 
-use crate::{color_mapping::ColorMapping, colors::Render};
+use crate::colors::{ColorMapping, Render};
 
 const HEADER: &str = concat!("readchat ", env!("CARGO_PKG_VERSION"));
 
