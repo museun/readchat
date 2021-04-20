@@ -8,8 +8,11 @@ mod app;
 pub use app::App;
 
 mod args;
+
+pub mod colors;
+
+mod debug;
 mod queue;
-mod testing;
 mod twitch;
 
 mod partition;

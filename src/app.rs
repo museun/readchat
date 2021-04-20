@@ -23,8 +23,8 @@ impl App {
         logger.transcribe(&format!("*** session start: {}", crate::timestamp()))?;
 
         let conn = if args.debug {
-            use crate::testing::*;
-            TcpStream::connect(make_interesting_chat(TestingOpts::load())?)?
+            use crate::debug::*;
+            TcpStream::connect(make_interesting_chat(DebugOpts::load())?)?
         } else {
             TcpStream::connect(twitchchat::TWITCH_IRC_ADDRESS)?
         };

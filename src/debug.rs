@@ -36,7 +36,7 @@ fn wait_for_join(mut io: &TcpStream) -> anyhow::Result<()> {
 fn garbage_out(
     io: &mut impl std::io::Write,
     chatters: &[Chatter],
-    opts: &TestingOpts,
+    opts: &DebugOpts,
 ) -> anyhow::Result<()> {
     let range = opts.duration_lower..opts.duration_upper;
     while let Some(chatter) = chatters.choose() {
@@ -53,7 +53,7 @@ fn garbage_out(
     Ok(())
 }
 
-fn feed_chat(listener: TcpListener, chatters: Vec<Chatter>, opts: TestingOpts) {
+fn feed_chat(listener: TcpListener, chatters: Vec<Chatter>, opts: DebugOpts) {
     for socket in listener.incoming().flatten() {
         if let Err(..) = wait_for_join(&socket) {
             continue;
@@ -66,7 +66,7 @@ fn feed_chat(listener: TcpListener, chatters: Vec<Chatter>, opts: TestingOpts) {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct TestingOpts {
+pub struct DebugOpts {
     pub unique_chatters: usize,
     pub duration_lower: u64,
     pub duration_upper: u64,
@@ -74,7 +74,7 @@ pub struct TestingOpts {
     pub length_upper: usize,
 }
 
-impl TestingOpts {
+impl DebugOpts {
     pub fn load() -> Self {
         fn get<T: std::str::FromStr>(key: &str) -> Option<T> {
             std::env::var(key).ok()?.parse().ok()
@@ -90,7 +90,7 @@ impl TestingOpts {
     }
 }
 
-pub fn make_interesting_chat(opts: TestingOpts) -> anyhow::Result<std::net::SocketAddr> {
+pub fn make_interesting_chat(opts: DebugOpts) -> anyhow::Result<std::net::SocketAddr> {
     let mut chatters = Vec::with_capacity(opts.unique_chatters);
     let mut seen = HashSet::new();
     for chatter in std::iter::repeat_with(Chatter::new) {
@@ -111,35 +111,33 @@ pub fn make_interesting_chat(opts: TestingOpts) -> anyhow::Result<std::net::Sock
     Ok(addr)
 }
 
-#[derive(Debug)]
-struct Chatter {
-    name: String,
-    color: RGB,
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct Chatter {
+    pub(crate) name: String,
+    pub(crate) color: RGB,
 }
 
 impl Chatter {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
+        use twitchchat::twitch::color::twitch_colors;
+
         let mut name = format!(
             "{}{}",
             ADJECTIVES.choose().unwrap(),
             ANIMALS.choose().unwrap(),
         );
-        name.push_str(
-            &std::iter::repeat_with(|| fastrand::u8(b'0'..b'9'))
+        name.extend(
+            std::iter::repeat_with(|| fastrand::u8(b'0'..b'9'))
                 .take(fastrand::usize(0..5))
-                .map(|c| c as char)
-                .collect::<String>(),
+                .map(|c| c as char),
         );
 
-        let (_, color) = twitchchat::twitch::color::twitch_colors()
-            .choose()
-            .copied()
-            .unwrap();
+        let (_, color) = twitch_colors().choose().copied().unwrap();
 
         Self { name, color }
     }
 
-    fn speak(&self, opts: &TestingOpts) -> String {
+    pub(crate) fn speak(&self, opts: &DebugOpts) -> String {
         let mut len = fastrand::usize(opts.length_lower..opts.length_upper);
         let mut data = String::new();
 
@@ -160,7 +158,7 @@ impl Chatter {
     }
 }
 
-trait RandExt {
+pub(crate) trait RandExt {
     type Output: ?Sized;
     fn choose(&self) -> Option<&Self::Output>;
 }
