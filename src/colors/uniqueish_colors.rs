@@ -30,7 +30,7 @@ impl<const N: usize> UniqueishColors<N> {
     }
 
     pub fn select(&self, input: &str) -> UserDefinedColor {
-        self.lookup(simple_hash(0, input.as_bytes()) as usize)
+        self.lookup(simple_hash(input.as_bytes()) as usize)
     }
 
     pub fn next(&mut self) -> UserDefinedColor {
@@ -45,9 +45,9 @@ impl<const N: usize> UniqueishColors<N> {
     }
 }
 
-#[inline]
-fn simple_hash(seed: u32, data: &[u8]) -> u32 {
-    const PRIME: u32 = 5;
-    data.iter()
-        .fold(seed, |a, c| ((PRIME << 5).wrapping_add(a)) + *c as u32)
+fn simple_hash(data: &[u8]) -> u32 {
+    use std::hash::{BuildHasher, Hasher as _};
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write(data);
+    h.finish() as u32
 }

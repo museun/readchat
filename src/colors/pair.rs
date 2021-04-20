@@ -3,7 +3,7 @@ use crossterm::style::StyledContent;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
-#[derive(Deserialize, Serialize, PartialEq, Copy, Clone)]
+#[derive(Deserialize, Serialize, PartialEq, Copy, Clone, Hash, Eq, PartialOrd, Ord)]
 pub struct Pair {
     pub fg: Color,
     pub bg: Color,

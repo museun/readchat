@@ -3,7 +3,7 @@ use crossterm::style::StyledContent;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
-#[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Serialize, Deserialize, Hash, Eq, PartialOrd, Ord)]
 #[serde(untagged)]
 pub enum UserDefinedColor {
     Color(Color),
