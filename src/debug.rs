@@ -112,7 +112,7 @@ pub fn make_interesting_chat(opts: DebugOpts) -> anyhow::Result<std::net::Socket
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct Chatter {
+pub struct Chatter {
     pub(crate) name: String,
     pub(crate) color: RGB,
 }
@@ -158,7 +158,7 @@ impl Chatter {
     }
 }
 
-pub(crate) trait RandExt {
+pub trait RandExt {
     type Output: ?Sized;
     fn choose(&self) -> Option<&Self::Output>;
 }

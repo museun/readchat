@@ -1,6 +1,6 @@
 use twitchchat::commands::Channel;
 
-use crate::colors::{ColorMapping, Render};
+use crate::{color_mapping::ColorMapping, colors::Render};
 
 const HEADER: &str = concat!("readchat ", env!("CARGO_PKG_VERSION"));
 
@@ -101,14 +101,14 @@ impl Args {
         let channel = Channel::new(&channel).to_string();
 
         Ok(Self {
+            channel,
             nick_max,
             buffer_max,
-            min_width,
-            channel,
             debug,
             color_test,
             transcribe,
             timestamps,
+            min_width,
         })
     }
 }

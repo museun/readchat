@@ -1,15 +1,24 @@
-pub use args::Args;
-pub mod window;
-
 mod alt_screen;
-pub use alt_screen::AltScreen;
-
 mod app;
-pub use app::App;
-
 mod args;
+mod logger;
 
 pub mod colors;
+pub mod window;
+
+pub use alt_screen::AltScreen;
+pub use app::App;
+pub use args::Args;
+pub use logger::Logger;
+
+mod color;
+mod color_mapping;
+mod interactions;
+mod pair;
+mod table;
+mod user_defined_color;
+
+mod uniqueish_colors;
 
 mod debug;
 mod queue;
@@ -20,12 +29,18 @@ mod truncate;
 
 mod keys;
 
-mod logger;
-pub use logger::Logger;
-
 fn timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as _
+}
+
+fn array_iter<T, const N: usize>(
+    array: [T; N],
+) -> impl Iterator<Item = T> + ExactSizeIterator + Clone
+where
+    T: Clone,
+{
+    std::array::IntoIter::new(array)
 }
