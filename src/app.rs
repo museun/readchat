@@ -1,189 +1,132 @@
-use std::{net::TcpStream, time::Duration};
-
-use crate::{
-    args::Args,
-    keys::{self, Message},
-    twitch,
-    window::{UpdateMode, ViewMode, Window},
-    Logger,
+use std::{
+    io::Write,
+    sync::mpsc::{Receiver, SyncSender},
+    time::Duration,
 };
 
-use crossterm::event::*;
-use flume as channel;
+use crossterm::{event::Event, style::Colorize};
+
+use crate::{
+    events::{KeyManager, Message},
+    window::{RenderState, Status, View},
+    Logger, Window,
+};
 
 pub struct App {
-    pub(crate) view_mode: ViewMode,
-    pub(crate) waiting: bool,
-    pub(crate) window: Option<Window>,
-    pub(crate) args: Args,
+    pub(crate) window: Window,
+    keys: KeyManager,
+    logger: Logger,
+    sender: SyncSender<Message>,
+    receiver: Receiver<Message>,
+    channel: String,
 }
 
 impl App {
-    pub fn run(args: Args, mut logger: Logger) -> anyhow::Result<()> {
-        logger.transcribe(&format!("*** session start: {}", crate::timestamp()))?;
-
-        let conn = if args.debug {
-            use crate::debug::*;
-            TcpStream::connect(make_interesting_chat(DebugOpts::load())?)?
-        } else {
-            TcpStream::connect(twitchchat::TWITCH_IRC_ADDRESS)?
+    // TODO pass in key mappings and so we can create the messages/events channel for them
+    pub fn create(
+        window: Window,
+        logger: Logger,
+        channel: impl ToString,
+    ) -> (Self, SyncSender<Message>) {
+        let (tx, rx) = std::sync::mpsc::sync_channel(32);
+        let this = Self {
+            window,
+            keys: KeyManager::new(tx.clone()),
+            logger,
+            sender: tx.clone(),
+            receiver: rx,
+            channel: channel.to_string(),
         };
+        (this, tx)
+    }
 
-        let (sender, messages) = channel::bounded(64);
-        let _ = std::thread::spawn({
-            let channel = args.channel.clone();
-            move || {
-                let _ = twitch::run_to_completion(channel, sender, conn);
-            }
-        });
-        let (events_tx, events_rx) = channel::bounded(32);
+    pub fn run_on_buffered_stdout(self) -> anyhow::Result<()> {
+        self.run(&mut std::io::BufWriter::new(std::io::stdout()))
+    }
 
-        let mut this = Self {
-            view_mode: args
-                .min_width
-                .map(|_| ViewMode::Compact)
-                .unwrap_or(ViewMode::Normal),
-            window: Some(Window::new(args.nick_max, args.buffer_max, args.min_width)),
-            waiting: false,
-            args,
-        };
+    pub fn run(mut self, out: &mut impl Write) -> anyhow::Result<()> {
+        use Message::*;
+        const PREFIX: &str = "current mode: ";
 
-        'outer: while keep_running(&messages) {
-            if crossterm::event::poll(Duration::from_millis(150))? {
+        loop {
+            if crossterm::event::poll(Duration::from_millis(10))? {
                 match crossterm::event::read()? {
-                    Event::Key(event) => keys::handle(event, &events_tx),
-                    Event::Resize(_, _) => {
-                        this.update(UpdateMode::Redraw)?;
+                    Event::Key(event) => {
+                        if !self.keys.handle(event) {
+                            return Ok(());
+                        }
                     }
+                    Event::Resize(_, _) => {
+                        let mut state = RenderState::current_size(&mut *out)?;
+                        self.window.render_all(&mut state)?
+                    }
+                    Event::Mouse(_) => {}
+                }
+            }
+
+            for message in self.receiver.try_iter() {
+                let mut state = RenderState::current_size(&mut *out)?;
+
+                match message {
+                    Redraw if self.window.is_empty() => continue,
+                    Redraw => { /* fallthrough */ }
+
+                    msg @ LinksViewMode | msg @ MessagesViewMode => {
+                        let view = match msg {
+                            LinksViewMode => View::Links,
+                            MessagesViewMode => View::Message,
+                            _ => unreachable!(),
+                        };
+
+                        if *self.window.view() != view {
+                            self.window.set_view(view);
+                        }
+                        self.window.set_status(view.as_status(PREFIX));
+                    }
+
+                    ToggleTimestamps => self.window.toggle_timestamps(),
+
+                    Append(msg) => {
+                        self.window.add(msg);
+                        self.window.update(&mut state)?;
+                    }
+
+                    Connecting => {
+                        self.window.set_status(Status(
+                            "connecting...".yellow().to_string().into(),
+                            "connecting...".len(),
+                        ));
+                    }
+                    Connected => {
+                        self.window.set_status(Status(
+                            "connected".green().to_string().into(),
+                            "connected".len(),
+                        ));
+                    }
+
+                    Joining => {
+                        let s = format!("joining {}", (&*self.channel).cyan());
+                        self.window
+                            .set_status(Status(s.into(), "joining ".len() + self.channel.len()));
+                    }
+                    Joined => {
+                        let s = format!("joined {}", (&*self.channel).green());
+                        self.window
+                            .set_status(Status(s.into(), "joined ".len() + self.channel.len()));
+                    }
+
                     _ => {}
                 }
+
+                self.window.render_all(&mut state)?;
+                state.flush()?;
             }
 
-            for event in events_rx.try_iter() {
-                if !this.dispatch(event)? {
-                    break 'outer;
-                }
-            }
-
-            if this.waiting {
-                continue 'outer;
-            }
-
-            for msg in messages.try_iter() {
-                logger.transcribe(&format!(
-                    "{} {}: {}",
-                    crate::timestamp(),
-                    msg.name(),
-                    msg.data()
-                ))?;
-
-                this.update_with_window(
-                    move |window| {
-                        window.push(msg);
-                        Ok(())
-                    },
-                    UpdateMode::Append,
-                )?;
+            if self.window.is_status_stale() {
+                let mut state = RenderState::current_size(&mut *out)?;
+                self.window.render_all(&mut state)?;
+                state.flush()?;
             }
         }
-
-        todo!();
     }
-
-    fn dispatch(&mut self, event: Message) -> anyhow::Result<bool> {
-        use {Message as M, ViewMode as V};
-
-        let update_mode = match self.waiting {
-            false => UpdateMode::Redraw,
-            true => UpdateMode::MarkAll,
-        };
-
-        match (event, self.view_mode) {
-            (M::Quit, ..) => return Ok(false),
-
-            (M::Redraw, ..) => self.update(UpdateMode::Redraw)?,
-
-            (M::Delete, V::Normal) if !self.waiting => {
-                self.waiting = !self.waiting;
-                self.update(UpdateMode::MarkAll)?;
-            }
-
-            (M::Delete, V::Normal) if self.waiting => {
-                self.waiting = !self.waiting;
-                self.update(UpdateMode::Redraw)?
-            }
-
-            (M::Char(ch), V::Normal) if self.waiting => {
-                return self
-                    .with_window(|window, this| {
-                        window.delete(ch, this)?;
-                        this.waiting = false;
-                        Ok(())
-                    })
-                    .map(|_| true)
-            }
-
-            (M::NameColumnGrow, V::Normal) => self.with_window(|window, this| {
-                if Window::grow_nick_column(window) {
-                    return window.update(this, update_mode);
-                }
-                Ok(())
-            })?,
-
-            (M::NameColumnShrink, V::Normal) => self.with_window(|window, this| {
-                if Window::shrink_nick_column(window) {
-                    return window.update(this, update_mode);
-                }
-                Ok(())
-            })?,
-
-            (M::ToggleTimestamps, V::Compact) => {
-                self.args.timestamps = !self.args.timestamps;
-                self.update(UpdateMode::Redraw)?;
-            }
-
-            _ => {}
-        }
-
-        Ok(true)
-    }
-
-    #[track_caller]
-    fn with_window(
-        &mut self,
-        func: impl FnOnce(&mut Window, &mut Self) -> anyhow::Result<()>,
-    ) -> anyhow::Result<()> {
-        let mut window = self
-            .window
-            .take()
-            .expect("exclusive ownership of the window");
-
-        func(&mut window, self)?;
-
-        assert!(
-            self.window.replace(window).is_none(),
-            "single ownership of window"
-        );
-
-        Ok(())
-    }
-
-    fn update(&mut self, mode: UpdateMode) -> anyhow::Result<()> {
-        self.update_with_window(|_| Ok(()), mode)
-    }
-
-    fn update_with_window(
-        &mut self,
-        func: impl FnOnce(&mut Window) -> anyhow::Result<()>,
-        mode: UpdateMode,
-    ) -> anyhow::Result<()> {
-        self.with_window(|window, this| {
-            func(window)?;
-            window.update(this, mode)
-        })
-    }
-}
-
-fn keep_running<T>(ch: &channel::Receiver<T>) -> bool {
-    !matches!(ch.try_recv(), Err(channel::TryRecvError::Disconnected))
 }

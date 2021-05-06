@@ -1,298 +1,397 @@
-use crate::App;
-
-use super::{partition, queue::Queue, truncate};
-
-use std::{borrow::Cow, io::Write};
-
-use crossterm::{
-    cursor::*,
-    style::*,
-    terminal::{self, *},
+use std::{
+    borrow::Cow,
+    io::Write,
+    sync::Arc,
+    time::{Duration, Instant},
 };
-use twitchchat::{messages::Privmsg, twitch::color::RGB};
+
 use unicode_width::UnicodeWidthStr;
 
-// TODO make this configurable
-const MAX_COLUMN_WIDTH: usize = 25;
-// TODO make this configurable
-const MIN_COLUMN_WIDTH: usize = 5;
-// TODO make this configurable
-const MIN_WINDOW_WIDTH: usize = 30;
-// TODO make this configurable
-const TS_COLOR: Color = Color::DarkYellow;
+use crate::{
+    links_view::{LinkEntry, LinkSort},
+    print_padding_and_timestamp,
+    user::User,
+    util::*,
+    Color,
+};
 
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub enum UpdateMode {
-    Redraw,
-    Append,
-    MarkAll,
-}
-
-pub(crate) struct Window {
-    queue: Queue<Message<'static>>,
-    left: usize,
-    pad: String,
-    min: Option<usize>,
+#[derive(Default)]
+pub struct Window {
+    limit: usize,
+    show_timestamps: bool,
+    entries: Vec<Entry>,
+    links: Vec<LinkEntry>,
+    view: View,
+    status_mode: StatusMode,
 }
 
 impl Window {
-    pub(crate) fn new(left: usize, limit: usize, min: Option<usize>) -> Self {
+    pub fn new() -> Self {
+        Self::with_limit(50)
+    }
+
+    pub fn with_limit(limit: usize) -> Self {
         Self {
-            left,
-            pad: " ".repeat(left),
-            queue: Queue::with_size(limit),
-            min,
+            limit,
+            ..<_>::default()
         }
     }
 
-    pub(crate) fn push(&mut self, message: Privmsg<'static>) {
-        self.queue.push(Message::new(message));
+    pub fn toggle_timestamps(&mut self) {
+        self.show_timestamps = !self.show_timestamps
     }
 
-    pub(crate) fn update(&mut self, app: &mut App, update: UpdateMode) -> anyhow::Result<()> {
-        let (width, height) = terminal::size()?;
-        let mut stdout = std::io::stdout();
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 
-        app.view_mode = if (width as usize) < self.min.unwrap_or(MIN_WINDOW_WIDTH) {
-            ViewMode::Compact
-        } else {
-            ViewMode::Normal
-        };
-
-        match update {
-            UpdateMode::Redraw if self.queue.is_empty() => return Ok(()),
-
-            UpdateMode::Redraw => {
-                crossterm::execute!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
-                for msg in self.queue.iter().rev().take(height as _).rev() {
-                    let state = self.state(width, app.args.timestamps);
-                    app.view_mode.print_message(&mut stdout, msg, state)?;
-                }
-            }
-
-            UpdateMode::Append => {
-                if let Some(msg) = self.queue.last() {
-                    if self.queue.len() == 1 {
-                        crossterm::execute!(stdout, MoveTo(0, 0))?;
-                    }
-                    let state = self.state(width, app.args.timestamps);
-                    app.view_mode.print_message(&mut stdout, msg, state)?;
-                }
-            }
-
-            UpdateMode::MarkAll if matches!(app.view_mode, ViewMode::Normal) => {
-                crossterm::queue!(stdout, Clear(ClearType::All), MoveTo(0, 0))?;
-
-                let iter = self.queue.iter().rev().take((height) as _).rev();
-                let mut ch = ALPHA.iter().take(iter.len()).rev();
-
-                for msg in iter {
-                    let mut state = self.state(width, app.args.timestamps);
-                    // this'll stop printing deletion marks if we've reached the
-                    // end of our alphabet
-                    state.prefix = ch.next().copied();
-                    app.view_mode.print_message(&mut stdout, msg, state)?;
-                }
-            }
-            _ => {}
+    pub fn add(&mut self, entry: Entry) {
+        while self.entries.len() >= self.limit {
+            self.entries.rotate_left(1);
+            self.entries.pop();
         }
 
-        stdout.flush()?;
+        // XXX: should we remove 'stale' links when the queue is rotated?
+        let link_entries = entry.scry_links().map(|link| LinkEntry::new(link, &entry));
+        self.links.extend(link_entries);
+
+        self.entries.push(entry);
+        self.entries.sort_unstable_by_key(|e| e.ts);
+    }
+
+    pub const fn view(&self) -> &View {
+        &self.view
+    }
+
+    pub const fn status_mode(&self) -> &StatusMode {
+        &self.status_mode
+    }
+
+    pub fn set_view(&mut self, view: View) {
+        self.view = view;
+    }
+
+    pub fn is_status_stale(&self) -> bool {
+        matches!(self.status_mode, StatusMode::Show(_, dt) if dt.elapsed() >= Duration::from_secs(5))
+    }
+
+    pub fn hide_status(&mut self) {
+        self.status_mode = StatusMode::Hidden
+    }
+
+    pub fn set_status(&mut self, status: Status<'static>) {
+        match &mut self.status_mode {
+            StatusMode::Show(s, dt) => {
+                *s = status;
+                *dt = Instant::now();
+            }
+            s @ StatusMode::Hidden => *s = StatusMode::Show(status, Instant::now()),
+        }
+    }
+
+    pub fn touch_status(&mut self) {
+        if let StatusMode::Show(.., dt) = &mut self.status_mode {
+            *dt = Instant::now();
+        }
+    }
+
+    pub fn update(&mut self, state: &mut RenderState<&mut impl Write>) -> anyhow::Result<()> {
+        use crossterm::cursor::*;
+        if matches!(self.view, View::Message) {
+            let entries = std::mem::take(&mut self.entries);
+
+            if let Some(msg) = entries.last() {
+                if entries.len() == 1 {
+                    crossterm::execute!(state, MoveTo(0, 0))?;
+                }
+                self.write_single(state, msg)?;
+            }
+
+            assert!(
+                std::mem::replace(&mut self.entries, entries).is_empty(),
+                "entries should have not been written to"
+            );
+        }
         Ok(())
     }
 
-    pub(crate) fn delete(&mut self, ch: char, app: &mut App) -> anyhow::Result<()> {
-        if let Some(p) = ALPHA.iter().position(|&c| c == ch) {
-            let index = self.queue.len() - p - 1;
-            self.queue.remove(index)
+    fn render_status(&mut self, state: &mut RenderState<&mut impl Write>) -> anyhow::Result<()> {
+        const TIMEOUT: Duration = Duration::from_secs(5);
+        use crossterm::{cursor::*, style::*};
+
+        match &self.status_mode {
+            &StatusMode::Show(.., old)
+                if state
+                    .dt
+                    .checked_duration_since(old)
+                    .filter(|&dt| dt >= TIMEOUT)
+                    .is_some() =>
+            {
+                self.hide_status();
+            }
+
+            StatusMode::Show(text, ..) => {
+                use crossterm::queue;
+
+                let left = text.len();
+                let x = (state.width - 1) / 2 - left as u16 / 2;
+
+                queue!(
+                    state,
+                    SavePosition,
+                    MoveTo(x, 0),
+                    Print(text),
+                    RestorePosition
+                )?;
+            }
+
+            StatusMode::Hidden => {}
         }
-        self.update(app, UpdateMode::Redraw)
+
+        Ok(())
     }
 
-    pub(crate) fn grow_nick_column(&mut self) -> bool {
-        if self.left == MAX_COLUMN_WIDTH {
-            return false;
+    pub fn render_all(&mut self, state: &mut RenderState<&mut impl Write>) -> anyhow::Result<()> {
+        use crossterm::{cursor::*, terminal::*};
+
+        crossterm::queue!(state, Clear(ClearType::All), MoveTo(0, 0))?;
+        self.render_status(state)?;
+
+        match self.view {
+            View::Message => {
+                let entries = std::mem::take(&mut self.entries);
+
+                for entry in &entries[(entries.len()).saturating_sub(state.height as usize)..] {
+                    self.write_single(state, entry)?;
+                }
+
+                assert!(
+                    std::mem::replace(&mut self.entries, entries).is_empty(),
+                    "no writing should have happened to the entries"
+                );
+            }
+            View::Links => self.show_links(state)?,
+            _ => unimplemented!(),
         }
 
-        self.left += 1;
-        // TODO this could just truncate or append spaces instead of using an entirely new allocation
-        self.pad = " ".repeat(self.left);
-        true
+        state.flush()?;
+        Ok(())
     }
 
-    pub(crate) fn shrink_nick_column(&mut self) -> bool {
-        if self.left == MIN_COLUMN_WIDTH {
-            return false;
+    fn write_single(
+        &mut self,
+        state: &mut RenderState<&mut impl Write>,
+        entry: &Entry,
+    ) -> anyhow::Result<()> {
+        use crossterm::{cursor::*, style::*};
+
+        self.render_status(state)?;
+
+        crossterm::queue!(
+            state,
+            Print("\n"),
+            MoveToColumn(0),
+            Print(style(&entry.user.name).with((entry.user.color).into())),
+        )?;
+
+        if self.show_timestamps {
+            print_padding_and_timestamp(
+                state,
+                &entry.ts,
+                ("HH:MM:SS", "%X"),
+                Color(170, 85, 0),
+                (state.width as usize) - entry.user.name.width(),
+            )?;
         }
 
-        self.left -= 1;
-        // TODO this could just truncate or append spaces instead of using an entirely new allocation
-        self.pad = " ".repeat(self.left);
-        true
-    }
-
-    fn state(&self, width: u16, show_timestamp: bool) -> State<'_> {
-        State {
-            prefix: None,
-            left: self.left,
-            width: width as _,
-            pad: &self.pad,
-            indent: "",
-            show_timestamp,
+        for part in whitespace_partition(&entry.data, state.width as _, is_probably_a_uri) {
+            crossterm::queue!(state, Print("\n"), MoveToColumn(0), Print(part))?;
         }
+
+        crossterm::queue!(state, Print("\n"), MoveToColumn(0))?;
+
+        Ok(())
     }
-}
 
-#[rustfmt::skip]
-// XXX: we cannot use a binary search on this because 'a' < 'A'
-const ALPHA: &[char] = &[
-    // uppercase first
-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O',
-    'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+    // fn mark_deletes(&self, _state: State, _out: &mut impl Write) -> anyhow::Result<()> {
+    //     todo!()
+    // }
 
-    // then numbers
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+    fn show_links(&self, state: &mut RenderState<&mut impl Write>) -> anyhow::Result<()> {
+        use crossterm::{cursor::*, style::*};
 
-    // finally lowercase
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o',
-    'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-];
+        let view = LinkSort(&*self.links);
+        let list = view.sorted_by_ts();
 
-struct State<'a> {
-    prefix: Option<char>,
-    left: usize,
-    width: usize,
-    show_timestamp: bool,
-    pad: &'a str,
-    indent: &'a str,
+        let mut last = 0usize;
+
+        for (n, link) in list {
+            if last == n {
+                // just append the link
+                crossterm::queue!(
+                    state,
+                    MoveToColumn(0),
+                    Print(&link.link),
+                    Print("\n"),
+                    MoveToColumn(0),
+                )?;
+
+                continue;
+            } else {
+                crossterm::queue!(state, Print("\n"), MoveToColumn(0),)?;
+            }
+
+            last = n;
+
+            crossterm::queue!(
+                state,
+                Print(style(&link.user.name).with(link.user.color.into())),
+            )?;
+
+            if self.show_timestamps {
+                print_padding_and_timestamp(
+                    state,
+                    &link.ts,
+                    ("HH:MM:SS", "%X"),
+                    Color(170, 85, 0),
+                    (state.width as usize) - link.user.name.width(),
+                )?;
+            }
+
+            crossterm::queue!(
+                state,
+                Print("\n"),
+                MoveToColumn(0),
+                Print(&link.link),
+                Print("\n"),
+                MoveToColumn(0), // this is annoying
+            )?;
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
-pub enum ViewMode {
-    Normal,
-    Compact,
+pub enum View {
+    Message,
+    Delete,
+    Links,
 }
 
-impl ViewMode {
-    fn print_message(
-        &self,
-        stdout: &mut impl Write,
-        msg: &Message<'_>,
-        state: State<'_>,
-    ) -> anyhow::Result<()> {
-        let print = match self {
-            Self::Normal => Self::print_normal,
-            Self::Compact => Self::print_compact,
+impl View {
+    pub fn as_status(&self, prefix: &str) -> Status<'static> {
+        use crossterm::style::Colorize as _;
+        let (s, l) = match self {
+            Self::Message => ("message".cyan(), "message".len()),
+            Self::Delete => ("delete".red(), "delete".len()),
+            Self::Links => ("links".yellow(), "links".len()),
         };
-
-        let RGB(r, g, b) = msg.pm.color().unwrap_or_default().rgb;
-        print(stdout, msg, state, Color::Rgb { r, g, b })
-    }
-
-    fn print_normal(
-        stdout: &mut impl Write,
-        msg: &Message<'_>,
-        state: State<'_>,
-        color: Color,
-    ) -> anyhow::Result<()> {
-        let p = state.prefix.map(|_| 4).unwrap_or(0);
-
-        let name = truncate::truncate_or_pad(msg.pm.name(), state.left - p);
-        let name = style(name).with(color);
-
-        let partition = partition::partition(
-            msg.pm.data(),
-            state.width - p - state.left - 1 - state.indent.len(),
-        );
-
-        for (i, part) in partition.into_iter().enumerate() {
-            let first = i == 0;
-
-            crossterm::queue!(stdout, Print("\n"), MoveToColumn(0))?;
-
-            if let Some(prefix) = state.prefix {
-                if first {
-                    crossterm::queue!(
-                        stdout,
-                        Print("["),
-                        Print(style(prefix).with(Color::Yellow)),
-                        Print("] ")
-                    )?;
-                } else {
-                    crossterm::queue!(stdout, Print("    "))?;
-                }
-            }
-
-            if first {
-                crossterm::queue!(stdout, Print(&name))?;
-            } else {
-                crossterm::queue!(
-                    stdout,
-                    Print(&state.pad[..state.pad.len() - p]),
-                    Print(state.indent)
-                )?;
-            }
-            crossterm::queue!(stdout, Print(" "), Print(part))?;
-        }
-
-        Ok(())
-    }
-
-    fn print_compact(
-        stdout: &mut impl Write,
-        msg: &Message<'_>,
-        state: State<'_>,
-        color: Color,
-    ) -> anyhow::Result<()> {
-        const TS_FORMAT: usize = "HH:MM:SS".len();
-
-        let name = msg.pm.name();
-        let middle = state
-            .show_timestamp
-            .then(|| state.width - name.width() - TS_FORMAT)
-            .unwrap_or_default();
-
-        let name = (name.width() > state.width)
-            .then(|| truncate::truncate_or_pad(name, state.width))
-            .map(Cow::Owned)
-            .unwrap_or_else(|| Cow::Borrowed(name));
-
-        crossterm::queue!(
-            stdout,
-            Print("\n"),
-            MoveToColumn(0),
-            Print(&style(name).with(color))
-        )?;
-
-        if state.show_timestamp {
-            let ts = style(msg.ts.format("%X").to_string()).with(TS_COLOR);
-            crossterm::queue!(stdout, Print(" ".repeat(middle)), Print(ts))?;
-        }
-
-        crossterm::queue!(
-            stdout,
-            Print("\n"),
-            MoveToColumn(0),
-            Print(msg.pm.data()),
-            Print("\n"),
-            MoveToColumn(0)
-        )?;
-
-        Ok(())
+        Status::new(format!("{}{}", prefix, s), prefix.len() + l)
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-struct Message<'msg> {
-    pm: Privmsg<'msg>,
-    ts: chrono::DateTime<chrono::Local>,
+impl Default for View {
+    fn default() -> Self {
+        Self::Message
+    }
 }
 
-impl<'msg> Message<'msg> {
-    fn new(pm: Privmsg<'msg>) -> Self {
+pub enum StatusMode {
+    Show(Status<'static>, Instant),
+    Hidden,
+}
+
+impl Default for StatusMode {
+    fn default() -> Self {
+        Self::Hidden
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub struct Status<'a>(pub Cow<'a, str>, pub usize);
+
+impl<'a> Status<'a> {
+    pub fn new(data: impl Into<Cow<'a, str>>, len: usize) -> Self {
+        Self(data.into(), len)
+    }
+}
+
+impl<'a> Status<'a> {
+    const fn len(&self) -> usize {
+        let &Self(.., l) = self;
+        l
+    }
+
+    const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl<'a> std::fmt::Display for Status<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(s, ..) = self;
+        write!(f, "{}", s)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct Entry {
+    pub ts: chrono::DateTime<chrono::Local>,
+    pub user: User,
+    pub data: Arc<str>,
+}
+
+impl Entry {
+    fn scry_links(&self) -> impl Iterator<Item = String> + '_ {
+        self.data
+            .split_whitespace()
+            .flat_map(url::Url::parse)
+            .map(url::Url::into_string)
+    }
+}
+
+impl<'a> From<twitchchat::messages::Privmsg<'a>> for Entry {
+    fn from(msg: twitchchat::messages::Privmsg<'a>) -> Self {
+        let msg = twitchchat::IntoOwned::into_owned(msg);
+
         Self {
-            pm,
             ts: chrono::Local::now(),
+            user: User {
+                color: msg.color().unwrap_or_default().rgb.into(),
+                name: msg.name().to_string().into(),
+            },
+            data: msg.data().to_string().into(),
         }
+    }
+}
+
+pub struct RenderState<O: Sized> {
+    height: u16,
+    width: u16,
+    dt: Instant,
+    out: O,
+}
+
+impl<O: Sized> RenderState<O> {
+    pub fn current_size(out: O) -> anyhow::Result<Self> {
+        crossterm::terminal::size()
+            .map(|(width, height)| Self {
+                height,
+                width,
+                out,
+                dt: Instant::now(),
+            })
+            .map_err(<_>::into)
+    }
+}
+
+impl<O: Sized + Write> Write for RenderState<O> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.out.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.out.flush()
     }
 }
